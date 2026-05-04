@@ -208,8 +208,8 @@ defmodule SymphonyElixirWeb.Presenter do
 
       true ->
         %{
-          status: "missing_required_artifacts",
-          reason: "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+          status: "in_progress",
+          reason: "agent is running; handoff packet, validation, artifacts, and feedback sweep are expected after implementation"
         }
     end
   end

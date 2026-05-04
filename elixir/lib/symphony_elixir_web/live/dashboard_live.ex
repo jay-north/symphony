@@ -459,7 +459,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
     cond do
       String.contains?(normalized, ["blocked", "needed"]) -> "#{base} state-badge-danger"
       String.contains?(normalized, ["review", "merging"]) -> "#{base} state-badge-warning"
-      String.contains?(normalized, ["executing", "planning", "single"]) -> "#{base} state-badge-active"
+      String.contains?(normalized, ["executing", "planning", "single", "progress"]) -> "#{base} state-badge-active"
       true -> base
     end
   end

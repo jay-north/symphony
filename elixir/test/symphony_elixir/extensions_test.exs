@@ -410,8 +410,9 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "started_at" => state_payload["running"] |> List.first() |> Map.fetch!("started_at"),
                  "last_event_at" => nil,
                  "handoff_readiness" => %{
-                   "status" => "missing_required_artifacts",
-                   "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+                   "status" => "in_progress",
+                   "reason" =>
+                     "agent is running; handoff packet, validation, artifacts, and feedback sweep are expected after implementation"
                  },
                  "delivery_tracking" => %{
                    "mode" => "phased",
@@ -466,8 +467,9 @@ defmodule SymphonyElixir.ExtensionsTest do
                "last_message" => "rendered",
                "last_event_at" => nil,
                "handoff_readiness" => %{
-                 "status" => "missing_required_artifacts",
-                 "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+                 "status" => "in_progress",
+                 "reason" =>
+                   "agent is running; handoff packet, validation, artifacts, and feedback sweep are expected after implementation"
                },
                "delivery_tracking" => %{
                  "mode" => "phased",
@@ -479,8 +481,9 @@ defmodule SymphonyElixir.ExtensionsTest do
              },
              "retry" => nil,
              "handoff_readiness" => %{
-               "status" => "missing_required_artifacts",
-               "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+               "status" => "in_progress",
+               "reason" =>
+                 "agent is running; handoff packet, validation, artifacts, and feedback sweep are expected after implementation"
              },
              "delivery_tracking" => %{
                "mode" => "phased",
