@@ -1,0 +1,104 @@
+[
+  {
+    "id": "linear-workflow-01",
+    "skill": "linear-workflow",
+    "should_trigger": true,
+    "sandbox": "read-only",
+    "prompt": "Use the $linear-workflow skill in read-only simulation mode. Do not contact Linear, GitHub, or mutate files. Given a fake issue DEN-123 in Todo asking for a small UI fix, describe the exact workflow you would follow from pickup through pushed PR and Human Review handoff. Include required pre-reads, validation gates, workpad behavior, PR handling, and handoff conditions.",
+    "expected_final_substrings": [
+      "workpad",
+      "validation",
+      "PR",
+      "Human Review"
+    ],
+    "expected_trace_substrings": [
+      "linear-workflow"
+    ],
+    "forbidden_trace_substrings": [
+      "linear_graphql",
+      "gh pr create",
+      "git push"
+    ],
+    "max_command_executions": 8
+  },
+  {
+    "id": "workpad-01",
+    "skill": "workpad",
+    "should_trigger": true,
+    "sandbox": "read-only",
+    "prompt": "Use the $workpad skill in read-only simulation mode. Do not contact Linear or mutate files. For fake issue DEN-123, produce the single persistent workpad update you would maintain after implementation is started, tests are pending, and one blocker is discovered.",
+    "expected_final_substrings": [
+      "Codex Workpad",
+      "DEN-123",
+      "Validation",
+      "Blocker"
+    ],
+    "expected_trace_substrings": [
+      "workpad"
+    ],
+    "forbidden_trace_substrings": [
+      "linear_graphql"
+    ],
+    "max_command_executions": 6
+  },
+  {
+    "id": "push-01",
+    "skill": "push",
+    "should_trigger": true,
+    "sandbox": "read-only",
+    "prompt": "Use the $push skill in read-only simulation mode. Do not run git push, gh, or contact GitHub. Given a completed fake branch for DEN-123, describe the safe publish and draft PR sequence, including checks before staging, PR body expectations, and what you would not do without confirmation.",
+    "expected_final_substrings": [
+      "git status",
+      "draft PR",
+      "validation",
+      "push"
+    ],
+    "expected_trace_substrings": [
+      "push"
+    ],
+    "forbidden_trace_substrings": [
+      "git push",
+      "gh pr create",
+      "gh pr edit"
+    ],
+    "max_command_executions": 8
+  },
+  {
+    "id": "debug-01",
+    "skill": "debug",
+    "should_trigger": true,
+    "sandbox": "read-only",
+    "prompt": "Use the $debug skill in read-only simulation mode. Do not mutate files. A fake Symphony run for DEN-123 is stuck retrying with session abc123. Explain the concrete diagnostic sequence using issue/session identifiers, Symphony logs, Codex logs, and likely retry causes.",
+    "expected_final_substrings": [
+      "DEN-123",
+      "abc123",
+      "logs",
+      "retry"
+    ],
+    "expected_trace_substrings": [
+      "debug"
+    ],
+    "forbidden_trace_substrings": [
+      "git push",
+      "linear_graphql"
+    ],
+    "max_command_executions": 10
+  },
+  {
+    "id": "negative-01",
+    "skill": "linear-workflow",
+    "should_trigger": false,
+    "sandbox": "read-only",
+    "prompt": "In one paragraph, explain what Linear is. Do not use any skill.",
+    "expected_final_substrings": [
+      "Linear"
+    ],
+    "forbidden_trace_substrings": [
+      "linear-workflow",
+      "Human Review",
+      "git push",
+      "linear_graphql"
+    ],
+    "max_command_executions": 2
+  }
+]

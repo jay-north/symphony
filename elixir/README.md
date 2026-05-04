@@ -100,6 +100,10 @@ agent:
   max_turns: 6
 codex:
   command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=medium app-server
+  command_by_state:
+    Rework: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
+  command_by_label:
+    large-refactor: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
 ---
 
 You are working on a Linear issue {{ issue.identifier }}.
@@ -121,6 +125,12 @@ Notes:
   Symphony validation.
 - `agent.max_turns` caps how many back-to-back Codex turns Symphony will run in a single agent
   invocation when a turn completes normally but the issue is still in an active state. Default: `6`.
+- `agent.max_concurrent_agents_by_state` can lower or raise concurrency for specific tracker
+  states. This is useful for keeping `Rework` and `Merging` serialized while regular `Todo` issues
+  continue normally.
+- `codex.command_by_state` and `codex.command_by_label` optionally override `codex.command` for
+  specific issue states or labels. Label overrides win over state overrides. Use them for heavier
+  reasoning profiles on rework, large refactors, or other intentionally expensive queues.
 - For local evaluation, prefer conservative runtime defaults: `agent.max_concurrent_agents: 2`,
   `agent.max_turns: 6`, and `model_reasoning_effort=medium`. Raise these only for intentionally
   larger unattended batches.
@@ -155,6 +165,14 @@ codex:
   reload error until the file is fixed.
 - `server.port` or CLI `--port` enables the optional Phoenix LiveView dashboard and JSON API at
   `/`, `/api/v1/state`, `/api/v1/<issue_identifier>`, and `/api/v1/refresh`.
+- API running issue payloads include `handoff_readiness.status` with one of `blocked`,
+  `validating`, `review_ready`, or `missing_required_artifacts` so operators can see whether a run
+  is ready for human review or still missing production handoff evidence.
+
+## Repo-local Codex configuration
+
+This repo keeps durable Codex defaults in `.codex/config.toml` for manual development sessions.
+Symphony worker sessions still receive their unattended runtime policy from `WORKFLOW.md`.
 
 ## Goal and token strategy
 

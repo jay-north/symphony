@@ -61,6 +61,15 @@ defmodule SymphonyElixir.Config do
 
   def max_concurrent_agents_for_state(_state_name), do: settings!().agent.max_concurrent_agents
 
+  @spec codex_command(term()) :: String.t()
+  def codex_command(issue) do
+    config = settings!()
+
+    command_for_labels(config.codex.command_by_label, issue_labels(issue)) ||
+      command_for_state(config.codex.command_by_state, issue_state(issue)) ||
+      config.codex.command
+  end
+
   @spec codex_turn_sandbox_policy(Path.t() | nil) :: map()
   def codex_turn_sandbox_policy(workspace \\ nil) do
     case Schema.resolve_runtime_turn_sandbox_policy(settings!(), workspace) do
@@ -71,6 +80,40 @@ defmodule SymphonyElixir.Config do
         raise ArgumentError, message: "Invalid codex turn sandbox policy: #{inspect(reason)}"
     end
   end
+
+  defp command_for_labels(command_by_label, labels) when is_map(command_by_label) and is_list(labels) do
+    normalized_commands = normalize_command_map(command_by_label)
+
+    labels
+    |> Enum.map(&normalize_config_key/1)
+    |> Enum.find_value(&Map.get(normalized_commands, &1))
+  end
+
+  defp command_for_labels(_command_by_label, _labels), do: nil
+
+  defp command_for_state(command_by_state, state_name) when is_map(command_by_state) do
+    Map.get(normalize_command_map(command_by_state), normalize_config_key(state_name))
+  end
+
+  defp command_for_state(_command_by_state, _state_name), do: nil
+
+  defp normalize_command_map(command_map) when is_map(command_map) do
+    Map.new(command_map, fn {key, value} -> {normalize_config_key(key), value} end)
+  end
+
+  defp issue_labels(%{labels: labels}) when is_list(labels), do: labels
+  defp issue_labels(_issue), do: []
+
+  defp issue_state(%{state: state}) when is_binary(state), do: state
+  defp issue_state(_issue), do: nil
+
+  defp normalize_config_key(value) when is_binary(value) do
+    value
+    |> String.trim()
+    |> String.downcase()
+  end
+
+  defp normalize_config_key(value), do: value |> to_string() |> normalize_config_key()
 
   @spec workflow_prompt() :: String.t()
   def workflow_prompt do

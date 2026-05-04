@@ -75,6 +75,7 @@ defmodule SymphonyElixirWeb.Presenter do
       },
       running: running && running_issue_payload(running),
       retry: retry && retry_issue_payload(retry),
+      handoff_readiness: handoff_readiness(running, retry),
       logs: %{
         codex_session_logs: []
       },
@@ -108,6 +109,7 @@ defmodule SymphonyElixirWeb.Presenter do
       last_message: summarize_message(entry.last_codex_message),
       started_at: iso8601(entry.started_at),
       last_event_at: iso8601(entry.last_codex_timestamp),
+      handoff_readiness: handoff_readiness(entry, nil),
       tokens: %{
         input_tokens: entry.codex_input_tokens,
         output_tokens: entry.codex_output_tokens,
@@ -139,6 +141,7 @@ defmodule SymphonyElixirWeb.Presenter do
       last_event: running.last_codex_event,
       last_message: summarize_message(running.last_codex_message),
       last_event_at: iso8601(running.last_codex_timestamp),
+      handoff_readiness: handoff_readiness(running, nil),
       tokens: %{
         input_tokens: running.codex_input_tokens,
         output_tokens: running.codex_output_tokens,
@@ -177,6 +180,45 @@ defmodule SymphonyElixirWeb.Presenter do
     ]
     |> Enum.reject(&is_nil(&1.at))
   end
+
+  defp handoff_readiness(nil, retry) when is_map(retry) do
+    %{
+      status: "blocked",
+      reason: retry.error || "retry scheduled before handoff can continue"
+    }
+  end
+
+  defp handoff_readiness(running, _retry) when is_map(running) do
+    state = running.state |> to_string() |> String.trim() |> String.downcase()
+
+    cond do
+      state == "human review" ->
+        %{status: "review_ready", reason: "issue is in Human Review"}
+
+      state == "merging" ->
+        %{status: "validating", reason: "issue is in Merging flow"}
+
+      blocked_event?(running.last_codex_event) ->
+        %{status: "blocked", reason: summarize_message(running.last_codex_message) || "last Codex event requires attention"}
+
+      true ->
+        %{
+          status: "missing_required_artifacts",
+          reason: "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+        }
+    end
+  end
+
+  defp handoff_readiness(_running, _retry) do
+    %{status: "missing_required_artifacts", reason: "issue is not currently running or retrying"}
+  end
+
+  defp blocked_event?(event) when is_binary(event) do
+    normalized = String.downcase(event)
+    String.contains?(normalized, "error") or String.contains?(normalized, "failed")
+  end
+
+  defp blocked_event?(_event), do: false
 
   defp summarize_message(nil), do: nil
   defp summarize_message(message), do: StatusDashboard.humanize_codex_message(message)

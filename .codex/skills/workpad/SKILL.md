@@ -27,6 +27,7 @@ of truth for the run.
 
 ```text
 <hostname>:<abs-path>@<short-sha>
+codex=<version> model=<model> reasoning=<effort> branch=<branch> state=<issue-state>
 ```
 
 ### Plan
@@ -42,9 +43,17 @@ of truth for the run.
 
 - [ ] `<command>`
 
+### Artifacts
+
+- [ ] <screenshot/browser check, API/log proof, docs preview, or "not applicable: <reason>">
+
 ### Notes
 
 - <timestamp> <short factual note>
+
+### Oversight
+
+- <approval/sandbox denial, safer alternative attempted, or "not applicable">
 
 ### Confusions
 
@@ -54,8 +63,9 @@ of truth for the run.
 ## Update Points
 
 - After initial route/status check.
+- After runtime/environment stamp collection.
 - After reproduction or first deterministic issue signal.
 - After implementation milestones.
 - After validation.
+- After any approval, sandbox, network, or external-tool denial.
 - Before PR handoff or blocker handoff.
-

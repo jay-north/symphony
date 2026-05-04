@@ -588,6 +588,8 @@ not require recognizing or validating extension fields unless that extension is 
 - `agent.max_retry_backoff_ms`: integer, default `300000` (5m)
 - `agent.max_concurrent_agents_by_state`: map of positive integers, default `{}`
 - `codex.command`: shell command string, default `codex app-server`
+- `codex.command_by_state`: map of state-name strings to shell command strings, default `{}`
+- `codex.command_by_label`: map of label-name strings to shell command strings, default `{}`
 - `codex.approval_policy`: Codex `AskForApproval` value, default implementation-defined
 - `codex.thread_sandbox`: Codex `SandboxMode` value, default implementation-defined
 - `codex.turn_sandbox_policy`: Codex `SandboxPolicy` value, default implementation-defined
@@ -923,14 +925,17 @@ Protocol source of truth:
 
 Subprocess launch parameters:
 
-- Command: `codex.command`
-- Invocation: `bash -lc <codex.command>`
+- Command: `codex.command`, or an implementation-supported override such as
+  `codex.command_by_label` or `codex.command_by_state`
+- Invocation: `bash -lc <selected codex command>`
 - Working directory: workspace path
 - Transport/framing: the protocol transport required by the targeted Codex app-server version
 
 Notes:
 
 - The default command is `codex app-server`.
+- Label-specific command overrides SHOULD take precedence over state-specific command overrides
+  when both are implemented.
 - Approval policy, sandbox policy, cwd, prompt input, and OPTIONAL tool declarations are supplied
   using fields supported by the targeted Codex app-server version.
 
@@ -1405,6 +1410,10 @@ Minimum endpoints:
           "turn_count": 7,
           "last_event": "turn_completed",
           "last_message": "",
+          "handoff_readiness": {
+            "status": "missing_required_artifacts",
+            "reason": "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+          },
           "started_at": "2026-02-24T20:10:12Z",
           "last_event_at": "2026-02-24T20:14:59Z",
           "tokens": {

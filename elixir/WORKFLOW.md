@@ -28,8 +28,15 @@ hooks:
 agent:
   max_concurrent_agents: 2
   max_turns: 6
+  max_concurrent_agents_by_state:
+    Rework: 1
+    Merging: 1
 codex:
   command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=medium app-server
+  command_by_state:
+    Rework: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
+  command_by_label:
+    large-refactor: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
   approval_policy: never
   thread_sandbox: workspace-write
   turn_sandbox_policy:
@@ -67,6 +74,11 @@ Operating rules:
 - Keep the workpad concise. Prefer changed facts, completed checklist items, validation results, blockers, and handoff notes.
 - Use issue-provided `Validation`, `Test Plan`, or `Testing` sections as required acceptance input.
 - File out-of-scope discoveries as separate Backlog issues instead of expanding this issue.
+- Before moving a `Todo` issue to `In Progress`, confirm it has acceptance criteria, a validation/test plan, or an explicit exploratory label. If it does not, create/update the workpad with the missing readiness item and stop without coding.
+- Stamp the workpad with hostname, absolute workspace path, short SHA, Codex version, model, reasoning effort, branch, and issue state before implementation.
+- For UI work, include screenshots or browser verification artifacts in the handoff. For backend/API work, include request/response or log proof. For docs work, include preview or render proof when available.
+- Treat sandbox or approval denials as oversight signals, not routine blockers to brute-force. Record the denied action class and rationale in the workpad, try one narrower in-sandbox or read-only alternative, and stop for human review after a repeat denial.
+- Do not weaken sandbox, approval, credential, or network policy to finish a ticket unless the issue explicitly asks for an oversight-policy change.
 
 Route by status:
 - `Backlog`: do not modify; stop.
@@ -82,6 +94,7 @@ Load detailed procedures only when needed:
 - Workpad format and update rules: `.codex/skills/workpad/SKILL.md`
 - Normal implementation and PR handoff: `.codex/skills/linear-workflow/SKILL.md`
 - Maintaining this Symphony fork or repo-local skills: `.codex/skills/symphony-fork-maintainer/SKILL.md`
+- Auto-review oversight notes: `references/auto-review-oversight.md`
 - PR feedback sweep: `.codex/skills/pr-feedback-sweep/SKILL.md`
 - Human review handoff: `.codex/skills/human-review-handoff/SKILL.md`
 - Rework reset: `.codex/skills/rework/SKILL.md`
@@ -90,6 +103,8 @@ Load detailed procedures only when needed:
 Hard completion bar before moving to `Human Review`:
 - Workpad plan, acceptance criteria, and validation are current and checked off.
 - Required validation passes on the latest commit, or the exact unrelated blocker is documented.
+- PR body contains a handoff packet with summary, acceptance match, validation, risks, artifacts, follow-ups, and blockers.
 - Branch is pushed, PR is linked on the issue, and the PR is labeled `symphony`.
+- Any approval or sandbox denial was resolved through a safer path or documented as an operator blocker.
 - PR feedback sweep finds no unresolved actionable comments.
 - Final response reports completed actions and blockers only; do not include generic next steps for the user.

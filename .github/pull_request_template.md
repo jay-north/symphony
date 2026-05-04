@@ -12,11 +12,31 @@
 - <!-- Keep them high level -->
 - <!-- Each item <= 120 chars -->
 
-#### Alternatives
+#### Acceptance Match
 
-- <!-- What alternatives have been considered? Why not? -->
+- <!-- How this satisfies the issue acceptance criteria -->
 
-#### Test Plan
+#### Validation
 
 - [ ] `make -C elixir all`
 - [ ] <!-- Additional targeted checks (list below) -->
+
+#### Artifacts
+
+- <!-- UI: screenshot/browser check; backend: API/log proof; docs: preview/render; or N/A with reason -->
+
+#### Risks
+
+- <!-- Known risks, migration concerns, or "None known" -->
+
+#### Follow-ups
+
+- <!-- Linked follow-up issues, or "None" -->
+
+#### Blockers
+
+- <!-- Exact external blockers, or "None" -->
+
+#### Alternatives
+
+- <!-- What alternatives have been considered? Why not? -->
