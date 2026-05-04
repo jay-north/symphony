@@ -20,8 +20,8 @@ This directory contains the current Elixir/OTP implementation of Symphony, based
 4. Sends a workflow prompt to Codex
 5. Keeps Codex working on the issue until the work is done
 
-During app-server sessions, Symphony also serves a client-side `linear_graphql` tool so that repo
-skills can make raw Linear GraphQL calls.
+During app-server sessions, Symphony also serves scoped client-side Linear tools so that repo skills
+can fetch the current issue, create comments, and move issue state without exposing raw GraphQL.
 
 If a claimed issue moves to a terminal state (`Done`, `Closed`, `Cancelled`, or `Duplicate`),
 Symphony stops the active agent for that issue and cleans up matching workspaces.
@@ -31,11 +31,11 @@ Symphony stops the active agent for that issue and cleans up matching workspaces
 1. Make sure your codebase is set up to work well with agents: see
    [Harness engineering](https://openai.com/index/harness-engineering/).
 2. Get a new personal token in Linear via Settings → Security & access → Personal API keys, and
-   set it as the `LINEAR_API_KEY` environment variable.
+   put it in `elixir/.env` as `LINEAR_API_KEY=...` or export it in your shell.
 3. Copy this directory's `WORKFLOW.md` to your repo.
 4. Optionally copy the `commit`, `push`, `pull`, `land`, and `linear` skills to your repo.
-   - The `linear` skill expects Symphony's `linear_graphql` app-server tool for raw Linear GraphQL
-     operations such as comment editing or upload flows.
+   - The `linear` skill should use Symphony's scoped app-server tools for issue reads, comments,
+     and state transitions.
 5. Customize the copied `WORKFLOW.md` file for your project.
    - To get your project's slug, right-click the project and copy its URL. The slug is part of the
      URL.
@@ -64,6 +64,17 @@ mise exec -- mix setup
 mise exec -- mix build
 mise exec -- ./bin/symphony ./WORKFLOW.md
 ```
+
+For local auth, copy the example env file once:
+
+```bash
+cp .env.example .env
+$EDITOR .env
+```
+
+`./bin/symphony` automatically loads `.env` from the current directory and from
+the directory containing the selected `WORKFLOW.md`. Existing shell environment
+variables take precedence over `.env` values.
 
 ## Configuration
 
@@ -96,10 +107,14 @@ hooks:
   after_create: |
     git clone git@github.com:your-org/your-repo.git .
 agent:
-  max_concurrent_agents: 10
-  max_turns: 20
+  max_concurrent_agents: 2
+  max_turns: 6
 codex:
-  command: codex app-server
+  command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=medium app-server
+  command_by_state:
+    Rework: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
+  command_by_label:
+    large-refactor: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
 ---
 
 You are working on a Linear issue {{ issue.identifier }}.
@@ -120,7 +135,18 @@ Notes:
   unchanged. Compatibility then depends on the targeted Codex app-server version rather than local
   Symphony validation.
 - `agent.max_turns` caps how many back-to-back Codex turns Symphony will run in a single agent
-  invocation when a turn completes normally but the issue is still in an active state. Default: `20`.
+  invocation when a turn completes normally but the issue is still in an active state. Default: `6`.
+- `agent.max_concurrent_agents_by_state` can lower or raise concurrency for specific tracker
+  states. This is useful for keeping `Rework` and `Merging` serialized while regular `Todo` issues
+  continue normally.
+- `codex.command_by_state` and `codex.command_by_label` optionally override `codex.command` for
+  specific issue states or labels. Label overrides win over state overrides. Use them for heavier
+  reasoning profiles on rework, large refactors, or other intentionally expensive queues.
+- For local evaluation, prefer conservative runtime defaults: `agent.max_concurrent_agents: 2`,
+  `agent.max_turns: 6`, and `model_reasoning_effort=medium`. Raise these only for intentionally
+  larger unattended batches.
+- To opt into heavier execution, set a custom workflow file with higher `agent.max_concurrent_agents`,
+  higher `agent.max_turns`, or `model_reasoning_effort=xhigh` in `codex.command`.
 - If the Markdown body is blank, Symphony uses a default prompt template that includes the issue
   identifier, title, and body.
 - Use `hooks.after_create` to bootstrap a fresh workspace. For a Git-backed repo, you can run
@@ -128,6 +154,8 @@ Notes:
 - If a hook needs `mise exec` inside a freshly cloned workspace, trust the repo config and fetch
   the project dependencies in `hooks.after_create` before invoking `mise` later from other hooks.
 - `tracker.api_key` reads from `LINEAR_API_KEY` when unset or when value is `$LINEAR_API_KEY`.
+- `./bin/symphony` loads `.env` before reading workflow config. Keep secrets in
+  `elixir/.env`; it is ignored by git.
 - For path values, `~` is expanded to the home directory.
 - For env-backed path values, use `$VAR`. `workspace.root` resolves `$VAR` before path handling,
   while `codex.command` stays a shell command string and any `$VAR` expansion there happens in the
@@ -150,6 +178,59 @@ codex:
   reload error until the file is fixed.
 - `server.port` or CLI `--port` enables the optional Phoenix LiveView dashboard and JSON API at
   `/`, `/api/v1/state`, `/api/v1/<issue_identifier>`, and `/api/v1/refresh`.
+- API running issue payloads include `handoff_readiness.status` with one of `blocked`,
+  `validating`, `review_ready`, or `missing_required_artifacts` so operators can see whether a run
+  is ready for human review or still missing production handoff evidence.
+- API running issue payloads also include `delivery_tracking`, which identifies `single_pr` versus
+  `phased` work, current phase when it can be inferred from agent status updates, delivery status,
+  and the next route operators should expect.
+
+## Repo-local Codex configuration
+
+This repo keeps durable Codex defaults in `.codex/config.toml` for manual development sessions.
+Symphony worker sessions still receive their unattended runtime policy from `WORKFLOW.md`.
+
+## Goal and token strategy
+
+Symphony already owns the orchestration loop: it polls Linear, creates an issue workspace, starts
+Codex app-server, sends a workflow prompt, continues turns until the issue leaves an active state or
+`agent.max_turns` is reached, and tracks token usage from Codex events.
+
+Codex `/goal` is a persisted thread-goal tool layer inside Codex's model environment. It exposes
+goal read/create/complete primitives and system-managed usage accounting for a Codex thread; it is
+not a separate issue scheduler or workspace runner. Do not add `/goal` inside Symphony by default.
+If Symphony needs budgets, implement them as Symphony-native per-issue runtime state so budget
+handoff, issue status, and dashboard/API telemetry stay controlled by the orchestrator.
+
+## Phased PR delivery
+
+Larger issues can be run as a repeatable phase loop instead of one oversized PR:
+
+1. Move a ready issue to `Todo`.
+2. Symphony dispatches it because `Todo` is an active tracker state.
+3. The agent moves it to `In Progress`, creates or refreshes the single
+   `## Codex Workpad`, and decides whether the issue is single-PR or phased.
+4. For phased work, the agent writes a `### Phase Plan`, selects one current
+   phase, and limits code changes to that phase.
+5. The agent opens a phase PR, runs validation and PR feedback sweep, fills the
+   PR handoff packet, then moves the issue to `Human Review`.
+6. Review feedback moves the issue to `Rework`; an accepted/merged phase can
+   move the issue back to `Todo` or `In Progress` for the next unchecked phase.
+7. When every phase is checked off, the final accepted handoff can move to the
+   terminal workflow state.
+
+Codex `/goal` is useful context for this design: the Linear issue is the
+persistent objective, while the workpad phase plan is Symphony's visible,
+reviewable lifecycle for completing that objective across multiple agent runs
+and PRs.
+
+Token visibility today:
+
+- Terminal dashboard: current session tokens and aggregate totals.
+- LiveView dashboard: current input/output/total tokens per issue, aggregate totals, and rate-limit
+  snapshot when Codex emits one.
+- JSON API: `/api/v1/state` exposes `running[].tokens`, `codex_totals`, and `rate_limits`;
+  `/api/v1/<issue_identifier>` exposes the current issue token snapshot.
 
 ## Web dashboard
 

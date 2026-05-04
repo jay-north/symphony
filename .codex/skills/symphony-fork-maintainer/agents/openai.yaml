@@ -1,0 +1,4 @@
+interface:
+  display_name: "Symphony Fork Maintainer"
+  short_description: "Maintain this Symphony fork safely"
+  default_prompt: "Use $symphony-fork-maintainer to plan and execute a scoped maintenance change in this Symphony fork."

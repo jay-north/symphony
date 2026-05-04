@@ -4,6 +4,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
   alias SymphonyElixir.Config.Schema
   alias SymphonyElixir.Config.Schema.{Codex, StringOrMap}
   alias SymphonyElixir.Linear.Client
+  alias SymphonyElixir.Linear.Issue
 
   test "workspace bootstrap can be implemented in after_create hook" do
     test_root =
@@ -743,7 +744,7 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.tracker.project_slug == nil
     assert config.workspace.root == Path.join(System.tmp_dir!(), "symphony_workspaces")
     assert config.worker.max_concurrent_agents_per_host == nil
-    assert config.agent.max_concurrent_agents == 10
+    assert config.agent.max_concurrent_agents == 2
     assert config.codex.command == "codex app-server"
 
     assert config.codex.approval_policy == %{
@@ -968,6 +969,23 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     write_workflow_file!(Workflow.workflow_file_path(), worker_max_concurrent_agents_per_host: 2)
     assert :ok = Config.validate!()
     assert Config.settings!().worker.max_concurrent_agents_per_host == 2
+  end
+
+  test "config selects codex command by label before state" do
+    write_workflow_file!(Workflow.workflow_file_path(),
+      codex_command: "codex --config model=default app-server",
+      codex_command_by_state: %{"Rework" => "codex --config model=state app-server"},
+      codex_command_by_label: %{"large-refactor" => "codex --config model=label app-server"}
+    )
+
+    assert Config.codex_command(%Issue{state: "Todo", labels: []}) ==
+             "codex --config model=default app-server"
+
+    assert Config.codex_command(%Issue{state: "Rework", labels: []}) ==
+             "codex --config model=state app-server"
+
+    assert Config.codex_command(%Issue{state: "Rework", labels: ["large-refactor"]}) ==
+             "codex --config model=label app-server"
   end
 
   test "schema helpers cover custom type and state limit validation" do

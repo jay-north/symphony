@@ -132,20 +132,22 @@ defmodule SymphonyElixirWeb.DashboardLive do
               <table class="data-table data-table-running">
                 <colgroup>
                   <col style="width: 12rem;" />
-                  <col style="width: 8rem;" />
-                  <col style="width: 7.5rem;" />
-                  <col style="width: 8.5rem;" />
-                  <col />
-                  <col style="width: 10rem;" />
+                   <col style="width: 8rem;" />
+                   <col style="width: 7.5rem;" />
+                   <col style="width: 8.5rem;" />
+                   <col style="width: 12rem;" />
+                   <col />
+                   <col style="width: 10rem;" />
                 </colgroup>
                 <thead>
                   <tr>
                     <th>Issue</th>
                     <th>State</th>
-                    <th>Session</th>
-                    <th>Runtime / turns</th>
-                    <th>Codex update</th>
-                    <th>Tokens</th>
+                     <th>Session</th>
+                     <th>Runtime / turns</th>
+                     <th>Delivery</th>
+                     <th>Codex update</th>
+                     <th>Tokens</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -178,8 +180,20 @@ defmodule SymphonyElixirWeb.DashboardLive do
                         <% end %>
                       </div>
                     </td>
-                    <td class="numeric"><%= format_runtime_and_turns(entry.started_at, entry.turn_count, @now) %></td>
-                    <td>
+                     <td class="numeric"><%= format_runtime_and_turns(entry.started_at, entry.turn_count, @now) %></td>
+                     <td>
+                       <div class="delivery-stack">
+                         <span class={delivery_badge_class(entry.delivery_tracking.status)}>
+                           <%= delivery_label(entry.delivery_tracking) %>
+                         </span>
+                         <%= if entry.delivery_tracking.current_phase do %>
+                           <span class="muted event-meta"><%= entry.delivery_tracking.current_phase %></span>
+                         <% else %>
+                           <span class="muted event-meta"><%= entry.delivery_tracking.next_action %></span>
+                         <% end %>
+                       </div>
+                     </td>
+                     <td>
                       <div class="detail-stack">
                         <span
                           class="event-text"
@@ -319,6 +333,29 @@ defmodule SymphonyElixirWeb.DashboardLive do
       String.contains?(normalized, ["todo", "queued", "pending", "retry"]) -> "#{base} state-badge-warning"
       true -> base
     end
+  end
+
+  defp delivery_badge_class(status) do
+    base = "state-badge delivery-badge"
+    normalized = status |> to_string() |> String.downcase()
+
+    cond do
+      String.contains?(normalized, ["blocked", "needed"]) -> "#{base} state-badge-danger"
+      String.contains?(normalized, ["review", "merging"]) -> "#{base} state-badge-warning"
+      String.contains?(normalized, ["executing", "planning", "single"]) -> "#{base} state-badge-active"
+      true -> base
+    end
+  end
+
+  defp delivery_label(%{mode: "phased", status: status}), do: "Phased · #{humanize_delivery_status(status)}"
+  defp delivery_label(%{mode: "single_pr", status: status}), do: "Single PR · #{humanize_delivery_status(status)}"
+  defp delivery_label(%{status: status}), do: humanize_delivery_status(status)
+  defp delivery_label(_tracking), do: "Unknown"
+
+  defp humanize_delivery_status(status) do
+    status
+    |> to_string()
+    |> String.replace("_", " ")
   end
 
   defp schedule_runtime_tick do

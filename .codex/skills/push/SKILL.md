@@ -44,6 +44,8 @@ description:
    - Write a proper PR title that clearly describes the change outcome
    - For branch updates, explicitly reconsider whether current PR title still
      matches the latest scope; update it if it no longer does.
+   - For phased work, start the title with `Phase N:` and describe only the
+     current phase outcome.
 6. Write/update PR body explicitly using `.github/pull_request_template.md`:
    - Fill every section with concrete content for this change.
    - Replace all placeholder comments (`<!-- ... -->`).
@@ -52,6 +54,8 @@ description:
      scope (all intended work on the branch), not just the newest commits,
      including newly added work, removed work, or changed approach.
    - Do not reuse stale description text from earlier iterations.
+   - For phased work, fill `Phase Context` with current phase, remaining phases,
+     and the repeat/rework path.
 7. Validate PR body with `mix pr_body.check` and fix all reported issues.
 8. Reply with the PR URL from `gh pr view`.
 

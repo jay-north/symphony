@@ -128,8 +128,8 @@ defmodule SymphonyElixir.Config.Schema do
 
     @primary_key false
     embedded_schema do
-      field(:max_concurrent_agents, :integer, default: 10)
-      field(:max_turns, :integer, default: 20)
+      field(:max_concurrent_agents, :integer, default: 2)
+      field(:max_turns, :integer, default: 6)
       field(:max_retry_backoff_ms, :integer, default: 300_000)
       field(:max_concurrent_agents_by_state, :map, default: %{})
     end
@@ -158,6 +158,8 @@ defmodule SymphonyElixir.Config.Schema do
     @primary_key false
     embedded_schema do
       field(:command, :string, default: "codex app-server")
+      field(:command_by_state, :map, default: %{})
+      field(:command_by_label, :map, default: %{})
 
       field(:approval_policy, StringOrMap,
         default: %{
@@ -183,6 +185,8 @@ defmodule SymphonyElixir.Config.Schema do
         attrs,
         [
           :command,
+          :command_by_state,
+          :command_by_label,
           :approval_policy,
           :thread_sandbox,
           :turn_sandbox_policy,

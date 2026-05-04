@@ -323,62 +323,23 @@ defmodule SymphonyElixir.LiveE2ETest do
     project_slug=#{project_slug}
 
     Step 2:
-    You must use the `linear_graphql` tool to query the current issue by `{{ issue.id }}` and read:
-    - existing comments
-    - team workflow states
+    Use the scoped Linear tools for the current issue by `{{ issue.id }}`:
+    - `linear_get_issue` to confirm issue metadata
+    - `linear_create_comment` to post the required comment
+    - `linear_update_issue_state` to move the issue
 
     A turn that only creates the file is incomplete. Do not stop after Step 1.
 
     If the exact comment body below is not already present, post exactly one comment on the current issue with this exact body:
     #{expected_comment("{{ issue.identifier }}", project_slug)}
 
-    Use these exact GraphQL operations:
-
-    ```graphql
-    query IssueContext($id: String!) {
-      issue(id: $id) {
-        comments(first: 20) {
-          nodes {
-            body
-          }
-        }
-        team {
-          states(first: 50) {
-            nodes {
-              id
-              name
-              type
-            }
-          }
-        }
-      }
-    }
-    ```
-
-    ```graphql
-    mutation AddComment($issueId: String!, $body: String!) {
-      commentCreate(input: {issueId: $issueId, body: $body}) {
-        success
-      }
-    }
-    ```
-
     Step 3:
-    Use the same issue-context query result to choose a workflow state whose `type` is `completed`.
-    Then move the current issue to that state with this exact mutation:
-
-    ```graphql
-    mutation CompleteIssue($id: String!, $stateId: String!) {
-      issueUpdate(id: $id, input: {stateId: $stateId}) {
-        success
-      }
-    }
-    ```
+    Move the current issue to the completed workflow state named `Done`.
 
     Step 4:
-    Verify all outcomes with one final `linear_graphql` query against `{{ issue.id }}`:
-    - the exact comment body is present
-    - the issue state type is `completed`
+    Verify all outcomes:
+    - the comment tool returned success
+    - the state update tool returned success
 
     Do not ask for approval.
     Stop only after all three conditions are true:

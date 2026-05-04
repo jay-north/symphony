@@ -25,6 +25,11 @@ defmodule SymphonyElixir.ExtensionsTest do
       {:ok, issue_ids}
     end
 
+    def fetch_issue(issue_id) do
+      send(self(), {:fetch_issue_called, issue_id})
+      {:ok, issue_id}
+    end
+
     def graphql(query, variables) do
       send(self(), {:graphql_called, query, variables})
 
@@ -192,6 +197,8 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert {:ok, [^issue]} = SymphonyElixir.Tracker.fetch_candidate_issues()
     assert {:ok, [^issue]} = SymphonyElixir.Tracker.fetch_issues_by_states([" in progress ", 42])
     assert {:ok, [^issue]} = SymphonyElixir.Tracker.fetch_issue_states_by_ids(["issue-1"])
+    assert {:ok, ^issue} = SymphonyElixir.Tracker.fetch_issue("MT-1")
+    assert {:error, :issue_not_found} = SymphonyElixir.Tracker.fetch_issue("missing")
     assert :ok = SymphonyElixir.Tracker.create_comment("issue-1", "comment")
     assert :ok = SymphonyElixir.Tracker.update_issue_state("issue-1", "Done")
     assert_receive {:memory_tracker_comment, "issue-1", "comment"}
@@ -216,6 +223,9 @@ defmodule SymphonyElixir.ExtensionsTest do
 
     assert {:ok, ["issue-1"]} = Adapter.fetch_issue_states_by_ids(["issue-1"])
     assert_receive {:fetch_issue_states_by_ids_called, ["issue-1"]}
+
+    assert {:ok, "issue-1"} = Adapter.fetch_issue("issue-1")
+    assert_receive {:fetch_issue_called, "issue-1"}
 
     Process.put(
       {FakeLinearClient, :graphql_result},
@@ -319,6 +329,48 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert {:error, :issue_update_failed} = Adapter.update_issue_state("issue-1", "Odd")
   end
 
+  test "linear client fetches one issue by id or identifier" do
+    Application.put_env(:symphony_elixir, :linear_req_options, plug: {Req.Test, __MODULE__})
+
+    Req.Test.stub(__MODULE__, fn conn ->
+      assert Plug.Conn.get_req_header(conn, "authorization") == ["token"]
+
+      Req.Test.json(conn, %{
+        "data" => %{
+          "issue" => %{
+            "id" => "issue-1",
+            "identifier" => "DEN-53",
+            "title" => "Prepare scope",
+            "description" => "Readiness pass",
+            "priority" => 3,
+            "state" => %{"name" => "Backlog"},
+            "branchName" => "codex/DEN-53",
+            "url" => "https://linear.app/dentalowl/issue/DEN-53",
+            "assignee" => %{"id" => "user-1"},
+            "labels" => %{"nodes" => [%{"name" => "Feature"}]},
+            "inverseRelations" => %{
+              "nodes" => [
+                %{
+                  "type" => "blocks",
+                  "issue" => %{"id" => "issue-0", "identifier" => "DEN-52", "state" => %{"name" => "Done"}}
+                }
+              ]
+            },
+            "createdAt" => "2026-05-04T10:20:09Z",
+            "updatedAt" => "2026-05-04T11:20:33Z"
+          }
+        }
+      })
+    end)
+
+    assert {:ok, issue} = Client.fetch_issue("DEN-53")
+    assert issue.id == "issue-1"
+    assert issue.identifier == "DEN-53"
+    assert issue.state == "Backlog"
+    assert issue.labels == ["feature"]
+    assert issue.blocked_by == [%{id: "issue-0", identifier: "DEN-52", state: "Done"}]
+  end
+
   test "phoenix observability api preserves state, issue, and refresh responses" do
     snapshot = static_snapshot()
     orchestrator_name = Module.concat(__MODULE__, :ObservabilityApiOrchestrator)
@@ -348,6 +400,7 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "issue_id" => "issue-http",
                  "issue_identifier" => "MT-HTTP",
                  "state" => "In Progress",
+                 "labels" => ["large-refactor"],
                  "worker_host" => nil,
                  "workspace_path" => nil,
                  "session_id" => "thread-http",
@@ -356,6 +409,16 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "last_message" => "rendered",
                  "started_at" => state_payload["running"] |> List.first() |> Map.fetch!("started_at"),
                  "last_event_at" => nil,
+                 "handoff_readiness" => %{
+                   "status" => "missing_required_artifacts",
+                   "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+                 },
+                 "delivery_tracking" => %{
+                   "mode" => "phased",
+                   "status" => "phase_plan_needed",
+                   "current_phase" => nil,
+                   "next_action" => "create/update Phase Plan and select exactly one current phase"
+                 },
                  "tokens" => %{"input_tokens" => 4, "output_tokens" => 8, "total_tokens" => 12}
                }
              ],
@@ -397,13 +460,34 @@ defmodule SymphonyElixir.ExtensionsTest do
                "session_id" => "thread-http",
                "turn_count" => 7,
                "state" => "In Progress",
+               "labels" => ["large-refactor"],
                "started_at" => issue_payload["running"]["started_at"],
                "last_event" => "notification",
                "last_message" => "rendered",
                "last_event_at" => nil,
+               "handoff_readiness" => %{
+                 "status" => "missing_required_artifacts",
+                 "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+               },
+               "delivery_tracking" => %{
+                 "mode" => "phased",
+                 "status" => "phase_plan_needed",
+                 "current_phase" => nil,
+                 "next_action" => "create/update Phase Plan and select exactly one current phase"
+               },
                "tokens" => %{"input_tokens" => 4, "output_tokens" => 8, "total_tokens" => 12}
              },
              "retry" => nil,
+             "handoff_readiness" => %{
+               "status" => "missing_required_artifacts",
+               "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+             },
+             "delivery_tracking" => %{
+               "mode" => "phased",
+               "status" => "phase_plan_needed",
+               "current_phase" => nil,
+               "next_action" => "create/update Phase Plan and select exactly one current phase"
+             },
              "logs" => %{"codex_session_logs" => []},
              "recent_events" => [],
              "last_error" => nil,
@@ -548,6 +632,9 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert html =~ "Offline"
     assert html =~ "Copy ID"
     assert html =~ "Codex update"
+    assert html =~ "Delivery"
+    assert html =~ "Phased"
+    assert html =~ "phase plan needed"
     refute html =~ "data-runtime-clock="
     refute html =~ "setInterval(refreshRuntimeClocks"
     refute html =~ "Refresh now"
@@ -561,6 +648,7 @@ defmodule SymphonyElixir.ExtensionsTest do
           issue_id: "issue-http",
           identifier: "MT-HTTP",
           state: "In Progress",
+          labels: ["large-refactor"],
           session_id: "thread-http",
           turn_count: 8,
           last_codex_event: :notification,
@@ -690,6 +778,7 @@ defmodule SymphonyElixir.ExtensionsTest do
           issue_id: "issue-http",
           identifier: "MT-HTTP",
           state: "In Progress",
+          labels: ["large-refactor"],
           session_id: "thread-http",
           turn_count: 7,
           codex_app_server_pid: nil,

@@ -329,6 +329,7 @@ pre,
 .issue-stack,
 .session-stack,
 .detail-stack,
+.delivery-stack,
 .token-stack {
   display: grid;
   gap: 0.24rem;
@@ -381,6 +382,12 @@ pre,
   background: var(--danger-soft);
   border-color: #f6d3cf;
   color: var(--danger);
+}
+
+.delivery-badge {
+  width: fit-content;
+  max-width: 100%;
+  text-transform: none;
 }
 
 .issue-id {

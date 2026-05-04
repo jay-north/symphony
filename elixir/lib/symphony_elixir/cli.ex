@@ -10,6 +10,7 @@ defmodule SymphonyElixir.CLI do
 
   @type ensure_started_result :: {:ok, [atom()]} | {:error, term()}
   @type deps :: %{
+          optional(:load_env_files) => (String.t() -> :ok),
           file_regular?: (String.t() -> boolean()),
           set_workflow_file_path: (String.t() -> :ok | {:error, term()}),
           set_logs_root: (String.t() -> :ok | {:error, term()}),
@@ -56,6 +57,7 @@ defmodule SymphonyElixir.CLI do
     expanded_path = Path.expand(workflow_path)
 
     if deps.file_regular?.(expanded_path) do
+      load_env_files(expanded_path, deps)
       :ok = deps.set_workflow_file_path.(expanded_path)
 
       case deps.ensure_all_started.() do
@@ -82,9 +84,75 @@ defmodule SymphonyElixir.CLI do
       set_workflow_file_path: &SymphonyElixir.Workflow.set_workflow_file_path/1,
       set_logs_root: &set_logs_root/1,
       set_server_port_override: &set_server_port_override/1,
+      load_env_files: &load_env_files_for_workflow/1,
       ensure_all_started: fn -> Application.ensure_all_started(:symphony_elixir) end
     }
   end
+
+  defp load_env_files(workflow_path, deps) do
+    loader = Map.get(deps, :load_env_files, fn _path -> :ok end)
+    loader.(workflow_path)
+  end
+
+  @spec load_env_files_for_workflow(String.t()) :: :ok
+  defp load_env_files_for_workflow(workflow_path) when is_binary(workflow_path) do
+    [
+      Path.expand(".env"),
+      workflow_path |> Path.dirname() |> Path.join(".env") |> Path.expand()
+    ]
+    |> Enum.uniq()
+    |> Enum.each(&load_env_file/1)
+
+    :ok
+  end
+
+  defp load_env_file(path) when is_binary(path) do
+    if File.regular?(path) do
+      path
+      |> File.read!()
+      |> String.split("\n")
+      |> Enum.each(&load_env_line/1)
+    end
+  end
+
+  defp load_env_line(line) when is_binary(line) do
+    line = String.trim(line)
+
+    if line == "" or String.starts_with?(line, "#") do
+      :ok
+    else
+      case String.split(line, "=", parts: 2) do
+        [key, value] -> put_env_if_absent(String.trim(key), parse_env_value(value))
+        _ -> :ok
+      end
+    end
+  end
+
+  defp put_env_if_absent(key, value) do
+    if valid_env_key?(key) and is_nil(System.get_env(key)) do
+      System.put_env(key, value)
+    end
+
+    :ok
+  end
+
+  defp valid_env_key?(key), do: String.match?(key, ~r/^[A-Za-z_][A-Za-z0-9_]*$/)
+
+  defp parse_env_value(value) do
+    value
+    |> String.trim()
+    |> trim_matching_quotes()
+  end
+
+  defp trim_matching_quotes("\"" <> rest) do
+    String.trim_trailing(rest, "\"")
+  end
+
+  defp trim_matching_quotes("'" <> rest) do
+    String.trim_trailing(rest, "'")
+  end
+
+  defp trim_matching_quotes(value), do: value
 
   defp maybe_set_logs_root(opts, deps) do
     case Keyword.get_values(opts, :logs_root) do
