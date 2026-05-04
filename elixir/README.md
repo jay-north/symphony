@@ -96,10 +96,10 @@ hooks:
   after_create: |
     git clone git@github.com:your-org/your-repo.git .
 agent:
-  max_concurrent_agents: 10
-  max_turns: 20
+  max_concurrent_agents: 2
+  max_turns: 6
 codex:
-  command: codex app-server
+  command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=medium app-server
 ---
 
 You are working on a Linear issue {{ issue.identifier }}.
@@ -120,7 +120,12 @@ Notes:
   unchanged. Compatibility then depends on the targeted Codex app-server version rather than local
   Symphony validation.
 - `agent.max_turns` caps how many back-to-back Codex turns Symphony will run in a single agent
-  invocation when a turn completes normally but the issue is still in an active state. Default: `20`.
+  invocation when a turn completes normally but the issue is still in an active state. Default: `6`.
+- For local evaluation, prefer conservative runtime defaults: `agent.max_concurrent_agents: 2`,
+  `agent.max_turns: 6`, and `model_reasoning_effort=medium`. Raise these only for intentionally
+  larger unattended batches.
+- To opt into heavier execution, set a custom workflow file with higher `agent.max_concurrent_agents`,
+  higher `agent.max_turns`, or `model_reasoning_effort=xhigh` in `codex.command`.
 - If the Markdown body is blank, Symphony uses a default prompt template that includes the issue
   identifier, title, and body.
 - Use `hooks.after_create` to bootstrap a fresh workspace. For a Git-backed repo, you can run
@@ -150,6 +155,26 @@ codex:
   reload error until the file is fixed.
 - `server.port` or CLI `--port` enables the optional Phoenix LiveView dashboard and JSON API at
   `/`, `/api/v1/state`, `/api/v1/<issue_identifier>`, and `/api/v1/refresh`.
+
+## Goal and token strategy
+
+Symphony already owns the orchestration loop: it polls Linear, creates an issue workspace, starts
+Codex app-server, sends a workflow prompt, continues turns until the issue leaves an active state or
+`agent.max_turns` is reached, and tracks token usage from Codex events.
+
+Codex `/goal` is a persisted thread-goal tool layer inside Codex's model environment. It exposes
+goal read/create/complete primitives and system-managed usage accounting for a Codex thread; it is
+not a separate issue scheduler or workspace runner. Do not add `/goal` inside Symphony by default.
+If Symphony needs budgets, implement them as Symphony-native per-issue runtime state so budget
+handoff, issue status, and dashboard/API telemetry stay controlled by the orchestrator.
+
+Token visibility today:
+
+- Terminal dashboard: current session tokens and aggregate totals.
+- LiveView dashboard: current input/output/total tokens per issue, aggregate totals, and rate-limit
+  snapshot when Codex emits one.
+- JSON API: `/api/v1/state` exposes `running[].tokens`, `codex_totals`, and `rate_limits`;
+  `/api/v1/<issue_identifier>` exposes the current issue token snapshot.
 
 ## Web dashboard
 

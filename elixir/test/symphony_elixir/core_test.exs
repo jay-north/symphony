@@ -16,7 +16,8 @@ defmodule SymphonyElixir.CoreTest do
     assert config.tracker.active_states == ["Todo", "In Progress"]
     assert config.tracker.terminal_states == ["Closed", "Cancelled", "Canceled", "Duplicate", "Done"]
     assert config.tracker.assignee == nil
-    assert config.agent.max_turns == 20
+    assert config.agent.max_concurrent_agents == 2
+    assert config.agent.max_turns == 6
 
     write_workflow_file!(Workflow.workflow_file_path(), poll_interval_ms: "invalid")
 
@@ -959,19 +960,19 @@ defmodule SymphonyElixir.CoreTest do
 
     prompt = PromptBuilder.build_prompt(issue, attempt: 2)
 
-    assert prompt =~ "You are working on a Linear ticket `MT-616`"
-    assert prompt =~ "Issue context:"
+    assert prompt =~ "You are working on Linear issue `MT-616`"
+    assert prompt =~ "Issue:"
     assert prompt =~ "Identifier: MT-616"
     assert prompt =~ "Title: Use rich templates for WORKFLOW.md"
     assert prompt =~ "Current status: In Progress"
     assert prompt =~ "https://example.org/issues/MT-616/use-rich-templates-for-workflowmd"
-    assert prompt =~ "This is an unattended orchestration session."
-    assert prompt =~ "Only stop early for a true blocker"
-    assert prompt =~ "Do not include \"next steps for user\""
-    assert prompt =~ "open and follow `.codex/skills/land/SKILL.md`"
-    assert prompt =~ "Do not call `gh pr merge` directly"
-    assert prompt =~ "Continuation context:"
-    assert prompt =~ "retry attempt #2"
+    assert prompt =~ "Stop only for true blockers"
+    assert prompt =~ "Use issue-provided `Validation`, `Test Plan`, or `Testing` sections"
+    assert prompt =~ "Final response reports completed actions and blockers only"
+    assert prompt =~ "follow `.codex/skills/land/SKILL.md`"
+    assert prompt =~ "do not call `gh pr merge` directly"
+    assert prompt =~ "Continuation:"
+    assert prompt =~ "Retry attempt #2"
   end
 
   test "prompt builder adds continuation guidance for retries" do
