@@ -16,6 +16,11 @@
 
 - <!-- How this satisfies the issue acceptance criteria -->
 
+#### Phase Context
+
+- <!-- Phase N goal, remaining phases, or "N/A: single-PR issue" -->
+- <!-- Next route after review/merge: Rework, Todo/In Progress for next phase, or terminal -->
+
 #### Validation
 
 - [ ] `make -C elixir all`

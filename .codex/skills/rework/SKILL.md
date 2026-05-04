@@ -17,7 +17,9 @@ Treat `Rework` as a full approach reset.
 4. Start from the current target branch in a fresh branch/workspace if needed.
 5. Create a fresh `## Codex Workpad` when the old one reflects the abandoned
    approach.
-6. Build a new plan, acceptance criteria, and validation checklist.
-7. Execute the normal linear-workflow skill.
+6. If the issue uses phased delivery, keep the same current phase unless the
+   reviewer explicitly rejected the phase plan.
+7. Build a new plan, acceptance criteria, and validation checklist.
+8. Execute the normal linear-workflow skill.
 
 Do not patch blindly on top of a rejected approach.

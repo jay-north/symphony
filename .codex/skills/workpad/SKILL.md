@@ -35,6 +35,17 @@ codex=<version> model=<model> reasoning=<effort> branch=<branch> state=<issue-st
 - [ ] 1. Parent task
 - [ ] 2. Parent task
 
+### Phase Plan
+
+- [ ] Phase 1 (Current): <reviewable outcome, or "not applicable: single-PR issue">
+- [ ] Phase 2: <reviewable outcome>
+
+Current phase acceptance:
+- [ ] <phase-specific criterion>
+
+Next after review:
+- <return to Todo/In Progress for next phase, Rework for requested changes, or terminal when complete>
+
 ### Acceptance Criteria
 
 - [ ] Criterion 1
@@ -64,6 +75,7 @@ codex=<version> model=<model> reasoning=<effort> branch=<branch> state=<issue-st
 
 - After initial route/status check.
 - After runtime/environment stamp collection.
+- After deciding whether the issue is single-PR or phased.
 - After reproduction or first deterministic issue signal.
 - After implementation milestones.
 - After validation.

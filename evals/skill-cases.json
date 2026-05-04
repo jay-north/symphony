@@ -1,5 +1,28 @@
 [
   {
+    "id": "phased-delivery-01",
+    "skill": "phased-delivery",
+    "should_trigger": true,
+    "sandbox": "read-only",
+    "prompt": "Use the $phased-delivery skill in read-only simulation mode. Do not contact Linear, GitHub, or mutate files. A fake issue DEN-456 is labeled large-refactor and asks for a multi-step orchestration change. Produce the workpad Phase Plan and explain how the current phase becomes one PR, how review routes to Rework, and how the next phase resumes after merge.",
+    "expected_final_substrings": [
+      "Phase Plan",
+      "Current",
+      "PR",
+      "Rework",
+      "Todo"
+    ],
+    "expected_trace_substrings": [
+      "phased-delivery"
+    ],
+    "forbidden_trace_substrings": [
+      "linear_graphql",
+      "gh pr create",
+      "git push"
+    ],
+    "max_command_executions": 6
+  },
+  {
     "id": "linear-workflow-01",
     "skill": "linear-workflow",
     "should_trigger": true,

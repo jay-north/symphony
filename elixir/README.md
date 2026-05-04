@@ -186,6 +186,28 @@ not a separate issue scheduler or workspace runner. Do not add `/goal` inside Sy
 If Symphony needs budgets, implement them as Symphony-native per-issue runtime state so budget
 handoff, issue status, and dashboard/API telemetry stay controlled by the orchestrator.
 
+## Phased PR delivery
+
+Larger issues can be run as a repeatable phase loop instead of one oversized PR:
+
+1. Move a ready issue to `Todo`.
+2. Symphony dispatches it because `Todo` is an active tracker state.
+3. The agent moves it to `In Progress`, creates or refreshes the single
+   `## Codex Workpad`, and decides whether the issue is single-PR or phased.
+4. For phased work, the agent writes a `### Phase Plan`, selects one current
+   phase, and limits code changes to that phase.
+5. The agent opens a phase PR, runs validation and PR feedback sweep, fills the
+   PR handoff packet, then moves the issue to `Human Review`.
+6. Review feedback moves the issue to `Rework`; an accepted/merged phase can
+   move the issue back to `Todo` or `In Progress` for the next unchecked phase.
+7. When every phase is checked off, the final accepted handoff can move to the
+   terminal workflow state.
+
+Codex `/goal` is useful context for this design: the Linear issue is the
+persistent objective, while the workpad phase plan is Symphony's visible,
+reviewable lifecycle for completing that objective across multiple agent runs
+and PRs.
+
 Token visibility today:
 
 - Terminal dashboard: current session tokens and aggregate totals.

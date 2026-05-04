@@ -75,6 +75,8 @@ Operating rules:
 - Use issue-provided `Validation`, `Test Plan`, or `Testing` sections as required acceptance input.
 - File out-of-scope discoveries as separate Backlog issues instead of expanding this issue.
 - Before moving a `Todo` issue to `In Progress`, confirm it has acceptance criteria, a validation/test plan, or an explicit exploratory label. If it does not, create/update the workpad with the missing readiness item and stop without coding.
+- Before implementation, decide whether this issue is single-PR or phased. Use phased delivery when the issue is large, risky, explicitly phased, or labeled `phased`, `multi-pr`, or `large-refactor`.
+- For phased delivery, treat the issue as the persistent objective, maintain `### Phase Plan` in the workpad, select exactly one current phase, ship one PR for that phase, hand off for review, and repeat on the next `Todo`/`In Progress` run.
 - Stamp the workpad with hostname, absolute workspace path, short SHA, Codex version, model, reasoning effort, branch, and issue state before implementation.
 - For UI work, include screenshots or browser verification artifacts in the handoff. For backend/API work, include request/response or log proof. For docs work, include preview or render proof when available.
 - Treat sandbox or approval denials as oversight signals, not routine blockers to brute-force. Record the denied action class and rationale in the workpad, try one narrower in-sandbox or read-only alternative, and stop for human review after a repeat denial.
@@ -93,6 +95,7 @@ Load detailed procedures only when needed:
 - Linear issue/comment operations: `.codex/skills/linear/SKILL.md`
 - Workpad format and update rules: `.codex/skills/workpad/SKILL.md`
 - Normal implementation and PR handoff: `.codex/skills/linear-workflow/SKILL.md`
+- Phased multi-PR delivery: `.codex/skills/phased-delivery/SKILL.md`
 - Maintaining this Symphony fork or repo-local skills: `.codex/skills/symphony-fork-maintainer/SKILL.md`
 - Auto-review oversight notes: `references/auto-review-oversight.md`
 - PR feedback sweep: `.codex/skills/pr-feedback-sweep/SKILL.md`
@@ -102,8 +105,9 @@ Load detailed procedures only when needed:
 
 Hard completion bar before moving to `Human Review`:
 - Workpad plan, acceptance criteria, and validation are current and checked off.
+- For phased delivery, current phase acceptance is checked off and later phases remain out of scope for this PR.
 - Required validation passes on the latest commit, or the exact unrelated blocker is documented.
-- PR body contains a handoff packet with summary, acceptance match, validation, risks, artifacts, follow-ups, and blockers.
+- PR body contains a handoff packet with summary, acceptance match, phase context when applicable, validation, risks, artifacts, follow-ups, and blockers.
 - Branch is pushed, PR is linked on the issue, and the PR is labeled `symphony`.
 - Any approval or sandbox denial was resolved through a safer path or documented as an operator blocker.
 - PR feedback sweep finds no unresolved actionable comments.

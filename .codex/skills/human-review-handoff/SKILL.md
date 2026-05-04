@@ -21,6 +21,9 @@ Before moving the issue to `Human Review`, verify:
 - PR is open, linked to the Linear issue, and labeled `symphony`.
 - PR body contains a handoff packet with summary, acceptance match, validation,
   risks, artifacts, follow-ups, and blockers.
+- For phased work, PR body identifies the current phase, remaining phases, and
+  whether the next issue state after merge should be `Todo`, `In Progress`, or
+  terminal.
 - Workpad artifact checklist is complete or explicitly marked not applicable.
 - Workpad oversight notes either say no approval/sandbox denial occurred or
   explain how the denial was resolved through a safer path.
@@ -31,6 +34,7 @@ Update the `## Codex Workpad` with:
 - Commit or branch summary.
 - Validation commands and results.
 - Proof artifacts collected or why they are not applicable.
+- Current phase completion state and next phase/rework route when applicable.
 - Approval or sandbox denials and safer alternatives attempted.
 - Any risks or follow-up issues created.
 
