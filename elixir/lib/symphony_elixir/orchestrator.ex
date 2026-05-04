@@ -132,16 +132,27 @@ defmodule SymphonyElixir.Orchestrator do
         state =
           case reason do
             :normal ->
-              Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}; scheduling active-state continuation check")
+              if no_progress_worker_exit?(running_entry) do
+                Logger.warning("Agent task completed with no Codex progress for issue_id=#{issue_id} session_id=#{session_id}; scheduling backoff retry")
 
-              state
-              |> complete_issue(issue_id)
-              |> schedule_issue_retry(issue_id, 1, %{
-                identifier: running_entry.identifier,
-                delay_type: :continuation,
-                worker_host: Map.get(running_entry, :worker_host),
-                workspace_path: Map.get(running_entry, :workspace_path)
-              })
+                schedule_issue_retry(state, issue_id, next_retry_attempt_from_running(running_entry), %{
+                  identifier: running_entry.identifier,
+                  error: "agent completed with no Codex progress",
+                  worker_host: Map.get(running_entry, :worker_host),
+                  workspace_path: Map.get(running_entry, :workspace_path)
+                })
+              else
+                Logger.info("Agent task completed for issue_id=#{issue_id} session_id=#{session_id}; scheduling active-state continuation check")
+
+                state
+                |> complete_issue(issue_id)
+                |> schedule_issue_retry(issue_id, 1, %{
+                  identifier: running_entry.identifier,
+                  delay_type: :continuation,
+                  worker_host: Map.get(running_entry, :worker_host),
+                  workspace_path: Map.get(running_entry, :workspace_path)
+                })
+              end
 
             _ ->
               Logger.warning("Agent task exited for issue_id=#{issue_id} session_id=#{session_id} reason=#{inspect(reason)}; scheduling retry")
@@ -1005,6 +1016,14 @@ defmodule SymphonyElixir.Orchestrator do
   defp release_issue_claim(%State{} = state, issue_id) do
     %{state | claimed: MapSet.delete(state.claimed, issue_id)}
   end
+
+  defp no_progress_worker_exit?(running_entry) when is_map(running_entry) do
+    Map.get(running_entry, :turn_count, 0) > 0 and
+      Map.get(running_entry, :codex_total_tokens, 0) == 0 and
+      Map.get(running_entry, :codex_output_tokens, 0) == 0
+  end
+
+  defp no_progress_worker_exit?(_running_entry), do: false
 
   defp retry_delay(attempt, metadata) when is_integer(attempt) and attempt > 0 and is_map(metadata) do
     if metadata[:delay_type] == :continuation and attempt == 1 do
