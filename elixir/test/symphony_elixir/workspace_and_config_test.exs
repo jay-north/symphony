@@ -772,6 +772,21 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.codex.turn_timeout_ms == 3_600_000
     assert config.codex.read_timeout_ms == 5_000
     assert config.codex.stall_timeout_ms == 300_000
+    assert config.agent.max_issue_runtime_ms == 0
+    assert config.agent.max_issue_tokens == 0
+
+    write_workflow_file!(Workflow.workflow_file_path(),
+      codex_turn_timeout_ms: 600_000,
+      codex_stall_timeout_ms: 60_000,
+      max_issue_runtime_ms: 600_000,
+      max_issue_tokens: 500_000
+    )
+
+    config = Config.settings!()
+    assert config.codex.turn_timeout_ms == 600_000
+    assert config.codex.stall_timeout_ms == 60_000
+    assert config.agent.max_issue_runtime_ms == 600_000
+    assert config.agent.max_issue_tokens == 500_000
 
     write_workflow_file!(Workflow.workflow_file_path(),
       codex_command: "codex --config 'model=\"gpt-5.5\"' app-server"
@@ -835,12 +850,21 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
     assert message =~ "codex.stall_timeout_ms"
 
+    write_workflow_file!(Workflow.workflow_file_path(), max_issue_runtime_ms: -1)
+    assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
+    assert message =~ "agent.max_issue_runtime_ms"
+
+    write_workflow_file!(Workflow.workflow_file_path(), max_issue_tokens: -1)
+    assert {:error, {:invalid_workflow_config, message}} = Config.validate!()
+    assert message =~ "agent.max_issue_tokens"
+
     write_workflow_file!(Workflow.workflow_file_path(),
       tracker_active_states: %{todo: true},
       tracker_terminal_states: %{done: true},
       poll_interval_ms: %{bad: true},
       workspace_root: 123,
       max_retry_backoff_ms: 0,
+      max_turns_by_state: %{"Todo" => "1", "Review" => 0, "Done" => "bad"},
       max_concurrent_agents_by_state: %{"Todo" => "1", "Review" => 0, "Done" => "bad"},
       hook_timeout_ms: 0,
       observability_enabled: "maybe",
@@ -945,11 +969,16 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     assert config.workspace.root == "env:#{workspace_env_var}"
   end
 
-  test "config supports per-state max concurrent agent overrides" do
+  test "config supports per-state agent limit overrides" do
     workflow = """
     ---
     agent:
       max_concurrent_agents: 10
+      max_turns: 6
+      max_turns_by_state:
+        todo: 1
+        "In Progress": 6
+        "In Review": 2
       max_concurrent_agents_by_state:
         todo: 1
         "In Progress": 4
@@ -960,6 +989,11 @@ defmodule SymphonyElixir.WorkspaceAndConfigTest do
     File.write!(Workflow.workflow_file_path(), workflow)
 
     assert Config.settings!().agent.max_concurrent_agents == 10
+    assert Config.max_turns_for_state("Todo") == 1
+    assert Config.max_turns_for_state("In Progress") == 6
+    assert Config.max_turns_for_state("In Review") == 2
+    assert Config.max_turns_for_state("Closed") == 6
+    assert Config.max_turns_for_state(:not_a_string) == 6
     assert Config.max_concurrent_agents_for_state("Todo") == 1
     assert Config.max_concurrent_agents_for_state("In Progress") == 4
     assert Config.max_concurrent_agents_for_state("In Review") == 2

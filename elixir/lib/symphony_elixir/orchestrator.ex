@@ -273,6 +273,7 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp reconcile_running_issues(%State{} = state) do
+    state = reconcile_budgeted_running_issues(state)
     state = reconcile_stalled_running_issues(state)
     running_ids = Map.keys(state.running)
 
@@ -311,6 +312,12 @@ defmodule SymphonyElixir.Orchestrator do
   @spec should_dispatch_issue_for_test(Issue.t(), term()) :: boolean()
   def should_dispatch_issue_for_test(%Issue{} = issue, %State{} = state) do
     should_dispatch_issue?(issue, state, active_state_set(), terminal_state_set())
+  end
+
+  @doc false
+  @spec reconcile_budgeted_running_issues_for_test(term()) :: term()
+  def reconcile_budgeted_running_issues_for_test(%State{} = state) do
+    reconcile_budgeted_running_issues(state)
   end
 
   @doc false
@@ -401,6 +408,80 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   defp log_missing_running_issue(_state, _issue_id), do: :ok
+
+  defp reconcile_budgeted_running_issues(%State{} = state) do
+    config = Config.settings!().agent
+    max_runtime_ms = Map.get(config, :max_issue_runtime_ms, 0)
+    max_tokens = Map.get(config, :max_issue_tokens, 0)
+
+    cond do
+      max_runtime_ms <= 0 and max_tokens <= 0 ->
+        state
+
+      map_size(state.running) == 0 ->
+        state
+
+      true ->
+        now = DateTime.utc_now()
+
+        Enum.reduce(state.running, state, fn {issue_id, running_entry}, state_acc ->
+          stop_budgeted_issue(state_acc, issue_id, running_entry, now, max_runtime_ms, max_tokens)
+        end)
+    end
+  end
+
+  defp stop_budgeted_issue(state, issue_id, running_entry, now, max_runtime_ms, max_tokens) do
+    case budget_violation(running_entry, now, max_runtime_ms, max_tokens) do
+      nil ->
+        state
+
+      {reason, value, limit} ->
+        identifier = Map.get(running_entry, :identifier, issue_id)
+        session_id = running_entry_session_id(running_entry)
+
+        Logger.warning(
+          "Issue budget exceeded: issue_id=#{issue_id} issue_identifier=#{identifier} session_id=#{session_id} reason=#{reason} value=#{value} limit=#{limit}; moving to Backlog and stopping active agent"
+        )
+
+        move_budgeted_issue_to_backlog(issue_id, identifier, reason, value, limit)
+        terminate_running_issue(state, issue_id, false)
+    end
+  end
+
+  defp budget_violation(running_entry, now, max_runtime_ms, max_tokens) do
+    runtime_ms = running_runtime_ms(running_entry, now)
+    total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
+
+    cond do
+      max_runtime_ms > 0 and is_integer(runtime_ms) and runtime_ms > max_runtime_ms ->
+        {:runtime_ms, runtime_ms, max_runtime_ms}
+
+      max_tokens > 0 and is_integer(total_tokens) and total_tokens > max_tokens ->
+        {:tokens, total_tokens, max_tokens}
+
+      true ->
+        nil
+    end
+  end
+
+  defp running_runtime_ms(running_entry, now) do
+    case Map.get(running_entry, :started_at) do
+      %DateTime{} = started_at -> max(0, DateTime.diff(now, started_at, :millisecond))
+      _ -> nil
+    end
+  end
+
+  defp move_budgeted_issue_to_backlog(issue_id, identifier, reason, value, limit) do
+    case Tracker.update_issue_state(issue_id, "Backlog") do
+      :ok ->
+        Logger.info("Moved budget-exceeded issue to Backlog: issue_id=#{issue_id} issue_identifier=#{identifier} reason=#{reason} value=#{value} limit=#{limit}")
+
+      {:error, update_reason} ->
+        Logger.error(
+          "Failed to move budget-exceeded issue to Backlog: issue_id=#{issue_id} issue_identifier=#{identifier} reason=#{reason} value=#{value} limit=#{limit} error=#{inspect(update_reason)}"
+        )
+    end
+  end
 
   defp refresh_running_issue_state(%State{} = state, %Issue{} = issue) do
     case Map.get(state.running, issue.id) do

@@ -28,7 +28,7 @@ one PR.
 8. After the current phase is pushed, open or update one PR for that phase.
 9. Put the phase number and phase goal in the PR title/body.
 10. Run the PR feedback sweep for that phase.
-11. Move to `Human Review` after the phase handoff bar is met.
+11. Move to `In Review` after the phase handoff bar is met.
 
 ## Workpad Phase Plan
 

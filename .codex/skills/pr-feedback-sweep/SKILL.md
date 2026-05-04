@@ -2,7 +2,7 @@
 name: pr-feedback-sweep
 description:
   Collect and resolve actionable PR feedback before a Symphony issue moves to
-  Human Review or before landing.
+  In Review or before landing.
 ---
 
 # PR Feedback Sweep

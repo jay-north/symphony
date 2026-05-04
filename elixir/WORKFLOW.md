@@ -5,6 +5,7 @@ tracker:
   active_states:
     - Todo
     - In Progress
+    - In Review
     - Merging
     - Rework
   terminal_states:
@@ -28,12 +29,21 @@ hooks:
 agent:
   max_concurrent_agents: 2
   max_turns: 6
+  max_turns_by_state:
+    Todo: 1
+    In Progress: 6
+    In Review: 3
+    Rework: 4
+    Merging: 2
   max_concurrent_agents_by_state:
+    Todo: 1
+    In Review: 1
     Rework: 1
     Merging: 1
 codex:
   command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=medium app-server
   command_by_state:
+    In Review: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
     Rework: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
   command_by_label:
     large-refactor: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=high app-server
@@ -74,7 +84,7 @@ Operating rules:
 - Keep the workpad concise. Prefer changed facts, completed checklist items, validation results, blockers, and handoff notes.
 - Use issue-provided `Validation`, `Test Plan`, or `Testing` sections as required acceptance input.
 - File out-of-scope discoveries as separate Backlog issues instead of expanding this issue.
-- Before moving a `Todo` issue to `In Progress`, confirm it has acceptance criteria, a validation/test plan, or an explicit exploratory label. If it does not, create/update the workpad with the missing readiness item and stop without coding.
+- `Todo` is an intake/readiness state, not the main implementation loop. Confirm it has acceptance criteria, a validation/test plan, or an explicit exploratory label. If it does, create or refresh the workpad, move it to `In Progress`, and stop. If it does not, create/update the workpad with the missing readiness item and stop without coding.
 - Before implementation, decide whether this issue is single-PR or phased. Use phased delivery when the issue is large, risky, explicitly phased, or labeled `phased`, `multi-pr`, or `large-refactor`.
 - For phased delivery, treat the issue as the persistent objective, maintain `### Phase Plan` in the workpad, select exactly one current phase, ship one PR for that phase, hand off for review, and repeat on the next `Todo`/`In Progress` run.
 - In phased workpad updates, PR handoff notes, and final/status messages, include the exact marker `Phase N (Current): <goal>` so the dashboard/API can infer the current phase.
@@ -85,9 +95,10 @@ Operating rules:
 
 Route by status:
 - `Backlog`: do not modify; stop.
-- `Todo`: move to `In Progress`, create or refresh `## Codex Workpad`, then execute.
-- `In Progress`: continue from the existing workpad and workspace state.
-- `Human Review`: do not code; wait for review updates.
+- `Todo`: run readiness only. Create or refresh `## Codex Workpad`, capture missing acceptance/validation requirements if any, move ready issues to `In Progress`, then stop.
+- `In Progress`: run implementation delivery. Continue from the existing workpad and workspace state, implement the scoped issue/current phase, validate, push, open or update the PR, run the PR feedback sweep, and move complete work to `In Review`.
+- `In Review`: run review/check resolution only. Do not expand scope. Inspect linked PR comments, review threads, and checks; resolve actionable feedback, push fixes, refresh validation, and either keep the issue in `In Review` with exact blockers or move it to `Merging` once checks and review are accepted.
+- `Human Review`: legacy alias for `In Review`; follow the same review/check resolution flow, but prefer moving complete handoffs to `In Review` in workflows that have that state.
 - `Rework`: follow `.codex/skills/rework/SKILL.md`.
 - `Merging`: follow `.codex/skills/land/SKILL.md`; do not call `gh pr merge` directly outside that flow.
 - Terminal states (`Done`, `Closed`, `Cancelled`, `Canceled`, `Duplicate`): do nothing.
@@ -104,7 +115,7 @@ Load detailed procedures only when needed:
 - Rework reset: `.codex/skills/rework/SKILL.md`
 - Landing/merge: `.codex/skills/land/SKILL.md`
 
-Hard completion bar before moving to `Human Review`:
+Hard completion bar before moving to `In Review`:
 - Workpad plan, acceptance criteria, and validation are current and checked off.
 - For phased delivery, current phase acceptance is checked off and later phases remain out of scope for this PR.
 - Required validation passes on the latest commit, or the exact unrelated blocker is documented.

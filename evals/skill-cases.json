@@ -27,12 +27,12 @@
     "skill": "linear-workflow",
     "should_trigger": true,
     "sandbox": "read-only",
-    "prompt": "Use the $linear-workflow skill in read-only simulation mode. Do not contact Linear, GitHub, or mutate files. Given a fake issue DEN-123 in Todo asking for a small UI fix, describe the exact workflow you would follow from pickup through pushed PR and Human Review handoff. Include required pre-reads, validation gates, workpad behavior, PR handling, and handoff conditions.",
+    "prompt": "Use the $linear-workflow skill in read-only simulation mode. Do not contact Linear, GitHub, or mutate files. Given a fake issue DEN-123 in Todo asking for a small UI fix, describe the exact workflow you would follow from pickup through pushed PR and In Review handoff. Include required pre-reads, validation gates, workpad behavior, PR handling, and handoff conditions.",
     "expected_final_substrings": [
       "workpad",
       "validation",
       "PR",
-      "Human Review"
+      "In Review"
     ],
     "expected_trace_substrings": [
       "linear-workflow"
@@ -118,7 +118,7 @@
     ],
     "forbidden_trace_substrings": [
       "linear-workflow",
-      "Human Review",
+      "In Review",
       "git push",
       "linear_graphql"
     ],

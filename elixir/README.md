@@ -40,7 +40,7 @@ Symphony stops the active agent for that issue and cleans up matching workspaces
    - To get your project's slug, right-click the project and copy its URL. The slug is part of the
      URL.
    - When creating a workflow based on this repo, note that it depends on non-standard Linear
-     issue statuses: "Rework", "Human Review", and "Merging". You can customize them in
+     issue statuses: "In Review", "Rework", and "Merging". You can customize them in
      Team Settings → Workflow in Linear.
 6. Follow the instructions below to install the required runtime dependencies and start the service.
 
@@ -109,6 +109,13 @@ hooks:
 agent:
   max_concurrent_agents: 2
   max_turns: 6
+  max_turns_by_state:
+    Todo: 1
+    In Progress: 6
+    In Review: 3
+  max_concurrent_agents_by_state:
+    Todo: 1
+    In Review: 1
 codex:
   command: codex --config shell_environment_policy.inherit=all --config 'model="gpt-5.5"' --config model_reasoning_effort=medium app-server
   command_by_state:
@@ -136,9 +143,12 @@ Notes:
   Symphony validation.
 - `agent.max_turns` caps how many back-to-back Codex turns Symphony will run in a single agent
   invocation when a turn completes normally but the issue is still in an active state. Default: `6`.
+- `agent.max_turns_by_state` can set a lower or higher continuation-turn cap for specific tracker
+  states. This is useful for making `Todo` a one-turn readiness flow, keeping `In Progress` as the
+  main implementation loop, and bounding `In Review` to review/check resolution.
 - `agent.max_concurrent_agents_by_state` can lower or raise concurrency for specific tracker
-  states. This is useful for keeping `Rework` and `Merging` serialized while regular `Todo` issues
-  continue normally.
+  states. This is useful for keeping readiness, review, rework, and merge lanes serialized while
+  regular implementation work continues normally.
 - `codex.command_by_state` and `codex.command_by_label` optionally override `codex.command` for
   specific issue states or labels. Label overrides win over state overrides. Use them for heavier
   reasoning profiles on rework, large refactors, or other intentionally expensive queues.
@@ -193,8 +203,9 @@ Symphony worker sessions still receive their unattended runtime policy from `WOR
 ## Goal and token strategy
 
 Symphony already owns the orchestration loop: it polls Linear, creates an issue workspace, starts
-Codex app-server, sends a workflow prompt, continues turns until the issue leaves an active state or
-`agent.max_turns` is reached, and tracks token usage from Codex events.
+Codex app-server, sends a workflow prompt, continues turns until the issue leaves an active state,
+the configured `agent.max_turns_by_state` limit is reached, or the fallback `agent.max_turns` is
+reached, and tracks token usage from Codex events.
 
 Codex `/goal` is a persisted thread-goal tool layer inside Codex's model environment. It exposes
 goal read/create/complete primitives and system-managed usage accounting for a Codex thread; it is
@@ -206,16 +217,20 @@ handoff, issue status, and dashboard/API telemetry stay controlled by the orches
 
 Larger issues can be run as a repeatable phase loop instead of one oversized PR:
 
-1. Move a ready issue to `Todo`.
+1. Move a candidate issue to `Todo`.
 2. Symphony dispatches it because `Todo` is an active tracker state.
-3. The agent moves it to `In Progress`, creates or refreshes the single
-   `## Codex Workpad`, and decides whether the issue is single-PR or phased.
-4. For phased work, the agent writes a `### Phase Plan`, selects one current
-   phase, and limits code changes to that phase.
-5. The agent opens a phase PR, runs validation and PR feedback sweep, fills the
-   PR handoff packet, then moves the issue to `Human Review`.
-6. Review feedback moves the issue to `Rework`; an accepted/merged phase can
-   move the issue back to `Todo` or `In Progress` for the next unchecked phase.
+3. The `Todo` flow performs readiness only: it creates or refreshes the single
+   `## Codex Workpad`, records missing acceptance/validation inputs if needed,
+   moves ready work to `In Progress`, and stops.
+4. The `In Progress` flow implements one single-PR scope or one current phase,
+   validates it, opens or updates a PR, runs the PR feedback sweep, fills the PR
+   handoff packet, and moves the issue to `In Review`.
+5. The `In Review` flow does review/check resolution only: it reads PR comments,
+   review threads, and checks, pushes focused fixes, and either keeps exact
+   blockers in `In Review` or moves accepted work to `Merging`.
+6. Review feedback that requires a reset moves the issue to `Rework`; an
+   accepted/merged phase can move the issue back to `Todo` or `In Progress` for
+   the next unchecked phase.
 7. When every phase is checked off, the final accepted handoff can move to the
    terminal workflow state.
 

@@ -1,18 +1,18 @@
 ---
 name: human-review-handoff
 description:
-  Move a Symphony issue to Human Review only after validation, PR linkage, and
+  Move a Symphony issue to In Review only after validation, PR linkage, and
   feedback sweep requirements are satisfied.
 ---
 
-# Human Review Handoff
+# In Review Handoff
 
 Use this only when implementation is complete or when a true external blocker
 requires human action.
 
 ## Completion Handoff
 
-Before moving the issue to `Human Review`, verify:
+Before moving the issue to `In Review`, verify:
 
 - Workpad plan, acceptance criteria, and validation are up to date.
 - Required validation passed on the latest commit, or exact unrelated failures
@@ -38,7 +38,8 @@ Update the `## Codex Workpad` with:
 - Approval or sandbox denials and safer alternatives attempted.
 - Any risks or follow-up issues created.
 
-Then move the Linear issue to `Human Review`.
+Then move the Linear issue to `In Review`. If the target workflow only has the
+legacy `Human Review` state, use that state as the equivalent review handoff.
 
 ## Blocker Handoff
 

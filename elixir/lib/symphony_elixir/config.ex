@@ -61,6 +61,19 @@ defmodule SymphonyElixir.Config do
 
   def max_concurrent_agents_for_state(_state_name), do: settings!().agent.max_concurrent_agents
 
+  @spec max_turns_for_state(term()) :: pos_integer()
+  def max_turns_for_state(state_name) when is_binary(state_name) do
+    config = settings!()
+
+    Map.get(
+      config.agent.max_turns_by_state,
+      Schema.normalize_issue_state(state_name),
+      config.agent.max_turns
+    )
+  end
+
+  def max_turns_for_state(_state_name), do: settings!().agent.max_turns
+
   @spec codex_command(term()) :: String.t()
   def codex_command(issue) do
     config = settings!()

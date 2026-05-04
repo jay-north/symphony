@@ -961,6 +961,96 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
     assert remaining_ms <= 10_500
   end
 
+  test "runtime budget stops an over-age worker without retry" do
+    write_workflow_file!(Workflow.workflow_file_path(),
+      tracker_kind: "memory",
+      max_issue_runtime_ms: 1_000,
+      max_issue_tokens: 0
+    )
+
+    Application.put_env(:symphony_elixir, :memory_tracker_recipient, self())
+
+    issue_id = "issue-runtime-budget"
+
+    worker_pid =
+      spawn(fn ->
+        receive do
+          :done -> :ok
+        end
+      end)
+
+    started_at = DateTime.add(DateTime.utc_now(), -5, :second)
+
+    state = %Orchestrator.State{
+      running: %{
+        issue_id => %{
+          pid: worker_pid,
+          ref: make_ref(),
+          identifier: "MT-RUNTIME",
+          issue: %Issue{id: issue_id, identifier: "MT-RUNTIME", state: "Todo"},
+          session_id: "thread-runtime-turn-runtime",
+          codex_total_tokens: 100,
+          started_at: started_at
+        }
+      },
+      claimed: MapSet.new([issue_id]),
+      retry_attempts: %{},
+      codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0}
+    }
+
+    updated_state = Orchestrator.reconcile_budgeted_running_issues_for_test(state)
+    Process.sleep(20)
+
+    refute Process.alive?(worker_pid)
+    refute Map.has_key?(updated_state.running, issue_id)
+    refute Map.has_key?(updated_state.retry_attempts, issue_id)
+    assert_receive {:memory_tracker_state_update, ^issue_id, "Backlog"}, 1_000
+  end
+
+  test "token budget stops an over-token worker without retry" do
+    write_workflow_file!(Workflow.workflow_file_path(),
+      tracker_kind: "memory",
+      max_issue_runtime_ms: 0,
+      max_issue_tokens: 500_000
+    )
+
+    Application.put_env(:symphony_elixir, :memory_tracker_recipient, self())
+
+    issue_id = "issue-token-budget"
+
+    worker_pid =
+      spawn(fn ->
+        receive do
+          :done -> :ok
+        end
+      end)
+
+    state = %Orchestrator.State{
+      running: %{
+        issue_id => %{
+          pid: worker_pid,
+          ref: make_ref(),
+          identifier: "MT-TOKEN",
+          issue: %Issue{id: issue_id, identifier: "MT-TOKEN", state: "Todo"},
+          session_id: "thread-token-turn-token",
+          codex_total_tokens: 500_001,
+          started_at: DateTime.utc_now()
+        }
+      },
+      claimed: MapSet.new([issue_id]),
+      retry_attempts: %{},
+      codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0}
+    }
+
+    updated_state = Orchestrator.reconcile_budgeted_running_issues_for_test(state)
+    Process.sleep(20)
+
+    refute Process.alive?(worker_pid)
+    refute Map.has_key?(updated_state.running, issue_id)
+    refute Map.has_key?(updated_state.retry_attempts, issue_id)
+    assert_receive {:memory_tracker_state_update, ^issue_id, "Backlog"}, 1_000
+  end
+
   test "status dashboard renders offline marker to terminal" do
     rendered =
       ExUnit.CaptureIO.capture_io(fn ->
@@ -985,6 +1075,36 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
 
     assert rendered =~ "https://linear.app/project/project/issues"
     refute rendered =~ "Dashboard:"
+  end
+
+  test "status dashboard labels worker age separately from codex runtime" do
+    snapshot_data =
+      {:ok,
+       %{
+         running: [
+           %{
+             identifier: "MT-AGE",
+             state: "Todo",
+             session_id: "thread-age-turn-age",
+             codex_app_server_pid: "12345",
+             codex_total_tokens: 42,
+             runtime_seconds: 75,
+             turn_count: 1,
+             last_codex_event: "turn/started",
+             last_codex_message: nil
+           }
+         ],
+         retrying: [],
+         codex_totals: %{input_tokens: 10, output_tokens: 5, total_tokens: 15, seconds_running: 75},
+         rate_limits: nil
+       }}
+
+    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+
+    assert rendered =~ "Codex Runtime:"
+    assert rendered =~ "WORKER AGE"
+    refute rendered =~ "│ Runtime:"
+    refute rendered =~ "AGE / TURN"
   end
 
   test "status dashboard renders dashboard url on its own line when server port is configured" do
