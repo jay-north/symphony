@@ -79,6 +79,31 @@ defmodule SymphonyElixir.CLITest do
     assert_received {:workflow_set, ^expanded_path}
   end
 
+  test "loads env files before setting workflow path" do
+    parent = self()
+    workflow_path = "tmp/custom/WORKFLOW.md"
+    expanded_path = Path.expand(workflow_path)
+
+    deps = %{
+      file_regular?: fn _path -> true end,
+      load_env_files: fn path ->
+        send(parent, {:env_loaded, path})
+        :ok
+      end,
+      set_workflow_file_path: fn path ->
+        send(parent, {:workflow_set, path})
+        :ok
+      end,
+      set_logs_root: fn _path -> :ok end,
+      set_server_port_override: fn _port -> :ok end,
+      ensure_all_started: fn -> {:ok, [:symphony_elixir]} end
+    }
+
+    assert :ok = CLI.evaluate([@ack_flag, workflow_path], deps)
+    assert_received {:env_loaded, ^expanded_path}
+    assert_received {:workflow_set, ^expanded_path}
+  end
+
   test "accepts --logs-root and passes an expanded root to runtime deps" do
     parent = self()
 

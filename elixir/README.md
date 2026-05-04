@@ -31,7 +31,7 @@ Symphony stops the active agent for that issue and cleans up matching workspaces
 1. Make sure your codebase is set up to work well with agents: see
    [Harness engineering](https://openai.com/index/harness-engineering/).
 2. Get a new personal token in Linear via Settings → Security & access → Personal API keys, and
-   set it as the `LINEAR_API_KEY` environment variable.
+   put it in `elixir/.env` as `LINEAR_API_KEY=...` or export it in your shell.
 3. Copy this directory's `WORKFLOW.md` to your repo.
 4. Optionally copy the `commit`, `push`, `pull`, `land`, and `linear` skills to your repo.
    - The `linear` skill expects Symphony's `linear_graphql` app-server tool for raw Linear GraphQL
@@ -64,6 +64,17 @@ mise exec -- mix setup
 mise exec -- mix build
 mise exec -- ./bin/symphony ./WORKFLOW.md
 ```
+
+For local auth, copy the example env file once:
+
+```bash
+cp .env.example .env
+$EDITOR .env
+```
+
+`./bin/symphony` automatically loads `.env` from the current directory and from
+the directory containing the selected `WORKFLOW.md`. Existing shell environment
+variables take precedence over `.env` values.
 
 ## Configuration
 
@@ -143,6 +154,8 @@ Notes:
 - If a hook needs `mise exec` inside a freshly cloned workspace, trust the repo config and fetch
   the project dependencies in `hooks.after_create` before invoking `mise` later from other hooks.
 - `tracker.api_key` reads from `LINEAR_API_KEY` when unset or when value is `$LINEAR_API_KEY`.
+- `./bin/symphony` loads `.env` before reading workflow config. Keep secrets in
+  `elixir/.env`; it is ignored by git.
 - For path values, `~` is expanded to the home directory.
 - For env-backed path values, use `$VAR`. `workspace.root` resolves `$VAR` before path handling,
   while `codex.command` stays a shell command string and any `$VAR` expansion there happens in the
