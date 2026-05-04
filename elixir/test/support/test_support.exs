@@ -14,6 +14,7 @@ defmodule SymphonyElixir.TestSupport do
       alias SymphonyElixir.Linear.Client
       alias SymphonyElixir.Linear.Issue
       alias SymphonyElixir.Orchestrator
+      alias SymphonyElixir.Preflight
       alias SymphonyElixir.PromptBuilder
       alias SymphonyElixir.StatusDashboard
       alias SymphonyElixir.Tracker
@@ -109,8 +110,11 @@ defmodule SymphonyElixir.TestSupport do
           max_turns_by_state: %{},
           max_issue_runtime_ms: 0,
           max_issue_tokens: 0,
+          max_issue_input_tokens: 0,
+          max_no_action_ms: 0,
           max_retry_backoff_ms: 300_000,
           max_concurrent_agents_by_state: %{},
+          prompts: %{},
           codex_command: "codex app-server",
           codex_command_by_state: %{},
           codex_command_by_label: %{},
@@ -151,8 +155,11 @@ defmodule SymphonyElixir.TestSupport do
     max_turns_by_state = Keyword.get(config, :max_turns_by_state)
     max_issue_runtime_ms = Keyword.get(config, :max_issue_runtime_ms)
     max_issue_tokens = Keyword.get(config, :max_issue_tokens)
+    max_issue_input_tokens = Keyword.get(config, :max_issue_input_tokens)
+    max_no_action_ms = Keyword.get(config, :max_no_action_ms)
     max_retry_backoff_ms = Keyword.get(config, :max_retry_backoff_ms)
     max_concurrent_agents_by_state = Keyword.get(config, :max_concurrent_agents_by_state)
+    prompts = Keyword.get(config, :prompts)
     codex_command = Keyword.get(config, :codex_command)
     codex_command_by_state = Keyword.get(config, :codex_command_by_state)
     codex_command_by_label = Keyword.get(config, :codex_command_by_label)
@@ -196,8 +203,11 @@ defmodule SymphonyElixir.TestSupport do
         "  max_turns_by_state: #{yaml_value(max_turns_by_state)}",
         "  max_issue_runtime_ms: #{yaml_value(max_issue_runtime_ms)}",
         "  max_issue_tokens: #{yaml_value(max_issue_tokens)}",
+        "  max_issue_input_tokens: #{yaml_value(max_issue_input_tokens)}",
+        "  max_no_action_ms: #{yaml_value(max_no_action_ms)}",
         "  max_retry_backoff_ms: #{yaml_value(max_retry_backoff_ms)}",
         "  max_concurrent_agents_by_state: #{yaml_value(max_concurrent_agents_by_state)}",
+        "prompts: #{yaml_value(prompts)}",
         "codex:",
         "  command: #{yaml_value(codex_command)}",
         "  command_by_state: #{yaml_value(codex_command_by_state)}",

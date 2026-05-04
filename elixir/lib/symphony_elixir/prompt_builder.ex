@@ -11,23 +11,34 @@ defmodule SymphonyElixir.PromptBuilder do
   def build_prompt(issue, opts \\ []) do
     template =
       Workflow.current()
-      |> prompt_template!()
+      |> prompt_template!(Keyword.get(opts, :route))
       |> parse_template!()
 
     template
     |> Solid.render!(
       %{
         "attempt" => Keyword.get(opts, :attempt),
-        "issue" => issue |> Map.from_struct() |> to_solid_map()
+        "issue" => issue |> Map.from_struct() |> to_solid_map(),
+        "route" => route_name(Keyword.get(opts, :route))
       },
       @render_opts
     )
     |> IO.iodata_to_binary()
   end
 
-  defp prompt_template!({:ok, %{prompt_template: prompt}}), do: default_prompt(prompt)
+  defp prompt_template!({:ok, workflow}, route) do
+    route_key = route_name(route)
 
-  defp prompt_template!({:error, reason}) do
+    workflow
+    |> Map.get(:route_prompt_templates, %{})
+    |> Map.get(route_key)
+    |> case do
+      prompt when is_binary(prompt) -> default_prompt(prompt)
+      _ -> default_prompt(Map.get(workflow, :prompt_template, ""))
+    end
+  end
+
+  defp prompt_template!({:error, reason}, _route) do
     raise RuntimeError, "workflow_unavailable: #{inspect(reason)}"
   end
 
@@ -60,5 +71,15 @@ defmodule SymphonyElixir.PromptBuilder do
     else
       prompt
     end
+  end
+
+  defp route_name(nil), do: nil
+
+  defp route_name(route) do
+    route
+    |> to_string()
+    |> String.trim()
+    |> String.trim_leading(":")
+    |> String.downcase()
   end
 end

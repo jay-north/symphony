@@ -30,7 +30,8 @@ defmodule SymphonyElixir.Workflow do
   @type loaded_workflow :: %{
           config: map(),
           prompt: String.t(),
-          prompt_template: String.t()
+          prompt_template: String.t(),
+          route_prompt_templates: map()
         }
 
   @spec current() :: {:ok, loaded_workflow()} | {:error, term()}
@@ -53,26 +54,29 @@ defmodule SymphonyElixir.Workflow do
   def load(path) when is_binary(path) do
     case File.read(path) do
       {:ok, content} ->
-        parse(content)
+        parse(content, path)
 
       {:error, reason} ->
         {:error, {:missing_workflow_file, path, reason}}
     end
   end
 
-  defp parse(content) do
+  defp parse(content, path) do
     {front_matter_lines, prompt_lines} = split_front_matter(content)
 
     case front_matter_yaml_to_map(front_matter_lines) do
       {:ok, front_matter} ->
         prompt = Enum.join(prompt_lines, "\n") |> String.trim()
 
-        {:ok,
-         %{
-           config: front_matter,
-           prompt: prompt,
-           prompt_template: prompt
-         }}
+        with {:ok, route_prompt_templates} <- load_route_prompt_templates(front_matter, Path.dirname(path)) do
+          {:ok,
+           %{
+             config: front_matter,
+             prompt: prompt,
+             prompt_template: prompt,
+             route_prompt_templates: route_prompt_templates
+           }}
+        end
 
       {:error, :workflow_front_matter_not_a_map} ->
         {:error, :workflow_front_matter_not_a_map}
@@ -111,6 +115,50 @@ defmodule SymphonyElixir.Workflow do
         {:error, reason} -> {:error, reason}
       end
     end
+  end
+
+  defp load_route_prompt_templates(front_matter, base_dir) when is_map(front_matter) do
+    prompts = Map.get(front_matter, "prompts", %{})
+
+    if is_map(prompts) do
+      prompts
+      |> Enum.reduce_while({:ok, %{}}, fn {route, path_or_template}, {:ok, acc} ->
+        case load_route_prompt_template(path_or_template, base_dir) do
+          {:ok, template} ->
+            {:cont, {:ok, Map.put(acc, normalize_route(route), template)}}
+
+          {:error, reason} ->
+            {:halt, {:error, reason}}
+        end
+      end)
+    else
+      {:error, {:workflow_parse_error, "prompts must be a map"}}
+    end
+  end
+
+  defp load_route_prompt_template(path_or_template, base_dir) when is_binary(path_or_template) do
+    path = Path.expand(path_or_template, base_dir)
+
+    case File.read(path) do
+      {:ok, content} ->
+        {:ok, String.trim(content)}
+
+      {:error, :enoent} ->
+        {:error, {:route_prompt_missing, path_or_template}}
+
+      {:error, reason} ->
+        {:error, {:route_prompt_unreadable, path_or_template, reason}}
+    end
+  end
+
+  defp load_route_prompt_template(_value, _base_dir),
+    do: {:error, {:route_prompt_invalid, "prompt values must be strings"}}
+
+  defp normalize_route(route) do
+    route
+    |> to_string()
+    |> String.trim()
+    |> String.downcase()
   end
 
   defp maybe_reload_store do

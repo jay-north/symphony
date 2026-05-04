@@ -13,8 +13,9 @@ defmodule SymphonyElixir.AgentRunner do
   def run(issue, codex_update_recipient \\ nil, opts \\ []) do
     # The orchestrator owns host retries so one worker lifetime never hops machines.
     worker_host = selected_worker_host(Keyword.get(opts, :worker_host), Config.settings!().worker.ssh_hosts)
+    route = Keyword.get(opts, :route)
 
-    Logger.info("Starting agent run for #{issue_context(issue)} worker_host=#{worker_host_for_log(worker_host)}")
+    Logger.info("Starting agent run for #{issue_context(issue)} route=#{route || "default"} worker_host=#{worker_host_for_log(worker_host)}")
 
     case run_on_worker_host(issue, codex_update_recipient, opts, worker_host) do
       :ok ->

@@ -11,7 +11,8 @@ defmodule SymphonyElixir.Codex.DynamicToolTest do
     assert tool_names == [
              "linear_get_issue",
              "linear_create_comment",
-             "linear_update_issue_state"
+             "linear_update_issue_state",
+             "linear_report_outcome"
            ]
 
     refute "linear_graphql" in tool_names
@@ -40,7 +41,8 @@ defmodule SymphonyElixir.Codex.DynamicToolTest do
                "supportedTools" => [
                  "linear_get_issue",
                  "linear_create_comment",
-                 "linear_update_issue_state"
+                 "linear_update_issue_state",
+                 "linear_report_outcome"
                ]
              }
            }
@@ -128,6 +130,62 @@ defmodule SymphonyElixir.Codex.DynamicToolTest do
     assert Jason.decode!(response["output"]) == %{"ok" => true}
   end
 
+  test "linear_report_outcome returns Symphony transition decision without mutating state" do
+    test_pid = self()
+
+    response =
+      DynamicTool.execute(
+        "linear_report_outcome",
+        %{
+          "issue_id" => "DEN-53",
+          "route" => "builder",
+          "status" => "ready_for_review",
+          "validation" => "passed",
+          "pr_url" => "https://github.com/acme/repo/pull/53"
+        },
+        outcome_reporter: fn issue_id, route, outcome, decision ->
+          send(test_pid, {:outcome_reported, issue_id, route, outcome.status, decision})
+          :ok
+        end
+      )
+
+    assert_received {:outcome_reported, "DEN-53", "builder", "ready_for_review", {:transition, "In Review", "builder completed PR with validation"}}
+
+    assert response["success"] == true
+
+    assert Jason.decode!(response["output"]) == %{
+             "ok" => true,
+             "decision" => %{
+               "action" => "transition",
+               "state" => "In Review",
+               "reason" => "builder completed PR with validation"
+             }
+           }
+  end
+
+  test "linear_report_outcome blocks incomplete builder handoffs" do
+    response =
+      DynamicTool.execute(
+        "linear_report_outcome",
+        %{
+          "issue_id" => "DEN-53",
+          "route" => "builder",
+          "status" => "ready_for_review",
+          "validation" => "failed"
+        }
+      )
+
+    assert response["success"] == true
+
+    assert Jason.decode!(response["output"]) == %{
+             "ok" => true,
+             "decision" => %{
+               "action" => "blocked",
+               "reason" => "builder completion is missing a PR URL or passing validation"
+             }
+           }
+  end
+
   test "scoped Linear tools validate required string arguments before calling adapters" do
     get_issue =
       DynamicTool.execute(
@@ -171,6 +229,21 @@ defmodule SymphonyElixir.Codex.DynamicToolTest do
     assert Jason.decode!(update_state["output"]) == %{
              "error" => %{
                "message" => "Dynamic Linear tools expect a JSON object with the required fields for that tool."
+             }
+           }
+
+    report_outcome =
+      DynamicTool.execute(
+        "linear_report_outcome",
+        %{"issue_id" => "DEN-53", "route" => "builder"},
+        outcome_reporter: fn _issue_id, _route, _outcome, _decision -> flunk("outcome reporter should not be called") end
+      )
+
+    assert report_outcome["success"] == false
+
+    assert Jason.decode!(report_outcome["output"]) == %{
+             "error" => %{
+               "message" => "Dynamic Linear tool argument `status` must be a non-empty string."
              }
            }
   end

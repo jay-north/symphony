@@ -435,7 +435,8 @@ defmodule SymphonyElixir.AppServerTest do
                          "name" => "linear_get_issue"
                        },
                        %{"name" => "linear_create_comment"},
-                       %{"name" => "linear_update_issue_state"}
+                       %{"name" => "linear_update_issue_state"},
+                       %{"name" => "linear_report_outcome"}
                      ] ->
                        description =~ "Linear"
 

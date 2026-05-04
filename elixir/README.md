@@ -106,6 +106,12 @@ workspace:
 hooks:
   after_create: |
     git clone git@github.com:your-org/your-repo.git .
+prompts:
+  planner: .symphony/prompts/planner.md
+  builder: .symphony/prompts/builder.md
+  reviewer: .symphony/prompts/reviewer.md
+  rework: .symphony/prompts/rework.md
+  land: .symphony/prompts/land.md
 agent:
   max_concurrent_agents: 2
   max_turns: 6
@@ -152,6 +158,15 @@ Notes:
 - `codex.command_by_state` and `codex.command_by_label` optionally override `codex.command` for
   specific issue states or labels. Label overrides win over state overrides. Use them for heavier
   reasoning profiles on rework, large refactors, or other intentionally expensive queues.
+- `prompts` optionally maps route names to small prompt files, resolved relative to the selected
+  `WORKFLOW.md`. Supported routes are `planner`, `builder`, `reviewer`, `rework`, and `land`.
+  If no prompt exists for a route, Symphony uses the Markdown body below the front matter.
+- Symphony assigns routes before launch. `Todo` defaults to `planner`, `In Progress` to `builder`,
+  `In Review` to `reviewer`, `Rework` to `rework`, and `Merging` to `land`; matching labels such
+  as `builder`, `reviewer`, `rework`, or `land` override the state-derived route.
+- Workers can report route results with the `linear_report_outcome` dynamic tool. Symphony evaluates
+  that outcome through `StateTransition` so prompts can prefer reporting evidence over direct state
+  mutation.
 - For local evaluation, prefer conservative runtime defaults: `agent.max_concurrent_agents: 2`,
   `agent.max_turns: 6`, and `model_reasoning_effort=medium`. Raise these only for intentionally
   larger unattended batches.

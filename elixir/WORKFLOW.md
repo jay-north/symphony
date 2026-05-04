@@ -18,6 +18,12 @@ polling:
   interval_ms: 5000
 workspace:
   root: ~/code/symphony-workspaces
+prompts:
+  planner: .symphony/prompts/planner.md
+  builder: .symphony/prompts/builder.md
+  reviewer: .symphony/prompts/reviewer.md
+  rework: .symphony/prompts/rework.md
+  land: .symphony/prompts/land.md
 hooks:
   after_create: |
     git clone --depth 1 https://github.com/openai/symphony .
@@ -76,51 +82,4 @@ Continuation:
 - Do not repeat completed investigation unless the current workspace state requires it.
 {% endif %}
 
-Operating rules:
-- Work only inside the provided workspace.
-- Do not ask the human for routine follow-up actions.
-- Stop only for true blockers: missing required auth, permissions, secrets, or a scope conflict that cannot be resolved in this workspace.
-- Maintain exactly one Linear comment headed `## Codex Workpad`; update it in place as the plan, acceptance criteria, validation, and notes change.
-- Keep the workpad concise. Prefer changed facts, completed checklist items, validation results, blockers, and handoff notes.
-- Use issue-provided `Validation`, `Test Plan`, or `Testing` sections as required acceptance input.
-- File out-of-scope discoveries as separate Backlog issues instead of expanding this issue.
-- `Todo` is an intake/readiness state, not the main implementation loop. Confirm it has acceptance criteria, a validation/test plan, or an explicit exploratory label. If it does, create or refresh the workpad, move it to `In Progress`, and stop. If it does not, create/update the workpad with the missing readiness item and stop without coding.
-- Before implementation, decide whether this issue is single-PR or phased. Use phased delivery when the issue is large, risky, explicitly phased, or labeled `phased`, `multi-pr`, or `large-refactor`.
-- For phased delivery, treat the issue as the persistent objective, maintain `### Phase Plan` in the workpad, select exactly one current phase, ship one PR for that phase, hand off for review, and repeat on the next `Todo`/`In Progress` run.
-- In phased workpad updates, PR handoff notes, and final/status messages, include the exact marker `Phase N (Current): <goal>` so the dashboard/API can infer the current phase.
-- Stamp the workpad with hostname, absolute workspace path, short SHA, Codex version, model, reasoning effort, branch, and issue state before implementation.
-- For UI work, include screenshots or browser verification artifacts in the handoff. For backend/API work, include request/response or log proof. For docs work, include preview or render proof when available.
-- Treat sandbox or approval denials as oversight signals, not routine blockers to brute-force. Record the denied action class and rationale in the workpad, try one narrower in-sandbox or read-only alternative, and stop for human review after a repeat denial.
-- Do not weaken sandbox, approval, credential, or network policy to finish a ticket unless the issue explicitly asks for an oversight-policy change.
-
-Route by status:
-- `Backlog`: do not modify; stop.
-- `Todo`: run readiness only. Create or refresh `## Codex Workpad`, capture missing acceptance/validation requirements if any, move ready issues to `In Progress`, then stop.
-- `In Progress`: run implementation delivery. Continue from the existing workpad and workspace state, implement the scoped issue/current phase, validate, push, open or update the PR, run the PR feedback sweep, and move complete work to `In Review`.
-- `In Review`: run review/check resolution only. Do not expand scope. Inspect linked PR comments, review threads, and checks; resolve actionable feedback, push fixes, refresh validation, and either keep the issue in `In Review` with exact blockers or move it to `Merging` once checks and review are accepted.
-- `Human Review`: legacy alias for `In Review`; follow the same review/check resolution flow, but prefer moving complete handoffs to `In Review` in workflows that have that state.
-- `Rework`: follow `.codex/skills/rework/SKILL.md`.
-- `Merging`: follow `.codex/skills/land/SKILL.md`; do not call `gh pr merge` directly outside that flow.
-- Terminal states (`Done`, `Closed`, `Cancelled`, `Canceled`, `Duplicate`): do nothing.
-
-Load detailed procedures only when needed:
-- Linear issue/comment operations: `.codex/skills/linear/SKILL.md`
-- Workpad format and update rules: `.codex/skills/workpad/SKILL.md`
-- Normal implementation and PR handoff: `.codex/skills/linear-workflow/SKILL.md`
-- Phased multi-PR delivery: `.codex/skills/phased-delivery/SKILL.md`
-- Maintaining this Symphony fork or repo-local skills: `.codex/skills/symphony-fork-maintainer/SKILL.md`
-- Auto-review oversight notes: `references/auto-review-oversight.md`
-- PR feedback sweep: `.codex/skills/pr-feedback-sweep/SKILL.md`
-- Human review handoff: `.codex/skills/human-review-handoff/SKILL.md`
-- Rework reset: `.codex/skills/rework/SKILL.md`
-- Landing/merge: `.codex/skills/land/SKILL.md`
-
-Hard completion bar before moving to `In Review`:
-- Workpad plan, acceptance criteria, and validation are current and checked off.
-- For phased delivery, current phase acceptance is checked off and later phases remain out of scope for this PR.
-- Required validation passes on the latest commit, or the exact unrelated blocker is documented.
-- PR body contains a handoff packet with summary, acceptance match, phase context when applicable, validation, risks, artifacts, follow-ups, and blockers.
-- Branch is pushed, PR is linked on the issue, and the PR is labeled `symphony`.
-- Any approval or sandbox denial was resolved through a safer path or documented as an operator blocker.
-- PR feedback sweep finds no unresolved actionable comments.
-- Final response reports completed actions and blockers only; do not include generic next steps for the user.
+Follow the route-specific prompt selected by Symphony. Keep work inside the issue workspace, maintain one `## Codex Workpad`, use issue-provided validation requirements, and stop only for true blockers.

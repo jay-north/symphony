@@ -1,0 +1,34 @@
+Read-only simulation for fake issue `DEN-456`, labeled `large-refactor`.
+
+```md
+## Codex Workpad
+
+### Phase Plan
+
+- [ ] Phase 1 (Current): Define orchestration phase state and transition contract
+- [ ] Phase 2: Implement orchestration runtime changes behind the new contract
+- [ ] Phase 3: Add validation, recovery behavior, and operator-facing status output
+
+Current phase acceptance:
+- [ ] The orchestration state model documents valid phase states, transitions, and ownership boundaries.
+- [ ] The contract explains how one issue persists across multiple phase PRs.
+- [ ] Rework behavior keeps the current phase active instead of advancing.
+- [ ] Resume behavior after merge selects the next unchecked phase.
+
+Next after review:
+- If PR is accepted and merged, return the issue to `Todo` or `In Progress` for the next unchecked phase.
+- If review requests changes, move the issue to `Rework` and keep the same current phase.
+```
+
+For this run, Symphony would execute only `Phase 1 (Current): Define orchestration phase state and transition contract`. That phase becomes exactly one PR, with a title like:
+
+```text
+Phase 1: Define orchestration phase state and transition contract
+```
+
+The PR body would include the phase goal, the current phase acceptance checklist, validation performed, risks, and the remaining pending phases. It would not include Phase 2 or Phase 3 implementation work.
+
+If review requests changes, the issue routes to `Rework`, and the workpad keeps Phase 1 marked as current. The follow-up run fixes the same Phase 1 PR; it does not mark Phase 1 complete and does not advance to Phase 2.
+
+After the Phase 1 PR is accepted and merged, the next `Todo` or `In Progress` run resumes the same persistent issue, checks off Phase 1, marks Phase 2 as current, and creates a new PR for Phase 2 only.
+

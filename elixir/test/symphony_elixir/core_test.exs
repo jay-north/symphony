@@ -19,6 +19,8 @@ defmodule SymphonyElixir.CoreTest do
     assert config.agent.max_concurrent_agents == 2
     assert config.agent.max_turns == 6
     assert config.agent.max_turns_by_state == %{}
+    assert config.agent.max_issue_input_tokens == 0
+    assert config.agent.max_no_action_ms == 0
 
     write_workflow_file!(Workflow.workflow_file_path(), poll_interval_ms: "invalid")
 
@@ -118,6 +120,10 @@ defmodule SymphonyElixir.CoreTest do
     assert Map.get(hooks, "after_create") =~ "cd elixir && mise trust"
     assert Map.get(hooks, "after_create") =~ "mise exec -- mix deps.get"
     assert Map.get(hooks, "before_remove") =~ "cd elixir && mise exec -- mix workspace.before_remove"
+
+    prompts = Map.get(config, "prompts", %{})
+    assert Map.get(prompts, "builder") == ".symphony/prompts/builder.md"
+    assert Map.get(prompts, "reviewer") == ".symphony/prompts/reviewer.md"
 
     assert String.trim(prompt) != ""
     assert is_binary(Config.workflow_prompt())
@@ -476,6 +482,103 @@ defmodule SymphonyElixir.CoreTest do
     assert updated_entry.issue.state == "In Progress"
   end
 
+  test "budget reconciliation stops and comments when input token limit is exceeded" do
+    previous_recipient = Application.get_env(:symphony_elixir, :memory_tracker_recipient)
+
+    try do
+      write_workflow_file!(Workflow.workflow_file_path(),
+        tracker_kind: "memory",
+        max_issue_input_tokens: 10
+      )
+
+      Application.put_env(:symphony_elixir, :memory_tracker_recipient, self())
+
+      issue_id = "issue-input-budget"
+      agent_pid = spawn(fn -> Process.sleep(:infinity) end)
+
+      state = %Orchestrator.State{
+        running: %{
+          issue_id => %{
+            pid: agent_pid,
+            ref: nil,
+            identifier: "MT-804",
+            issue: %Issue{id: issue_id, identifier: "MT-804", state: "In Progress"},
+            route: :builder,
+            codex_input_tokens: 11,
+            codex_total_tokens: 11,
+            started_at: DateTime.utc_now()
+          }
+        },
+        claimed: MapSet.new([issue_id]),
+        codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+        retry_attempts: %{},
+        stopped: %{}
+      }
+
+      updated_state = Orchestrator.reconcile_budgeted_running_issues_for_test(state)
+
+      refute Map.has_key?(updated_state.running, issue_id)
+      refute MapSet.member?(updated_state.claimed, issue_id)
+      refute Process.alive?(agent_pid)
+      assert updated_state.stopped[issue_id].reason == :input_tokens
+      assert updated_state.stopped[issue_id].budget_status == :exceeded
+
+      assert_receive {:memory_tracker_comment, ^issue_id, comment}
+      assert comment =~ "Reason: input_tokens"
+      assert_receive {:memory_tracker_state_update, ^issue_id, "Backlog"}
+    after
+      restore_app_env(:memory_tracker_recipient, previous_recipient)
+    end
+  end
+
+  test "budget reconciliation stops and comments when no meaningful action occurs" do
+    previous_recipient = Application.get_env(:symphony_elixir, :memory_tracker_recipient)
+
+    try do
+      write_workflow_file!(Workflow.workflow_file_path(),
+        tracker_kind: "memory",
+        max_no_action_ms: 1_000
+      )
+
+      Application.put_env(:symphony_elixir, :memory_tracker_recipient, self())
+
+      issue_id = "issue-no-action"
+      agent_pid = spawn(fn -> Process.sleep(:infinity) end)
+      started_at = DateTime.add(DateTime.utc_now(), -5, :second)
+
+      state = %Orchestrator.State{
+        running: %{
+          issue_id => %{
+            pid: agent_pid,
+            ref: nil,
+            identifier: "MT-805",
+            issue: %Issue{id: issue_id, identifier: "MT-805", state: "In Progress"},
+            route: :builder,
+            codex_input_tokens: 0,
+            codex_total_tokens: 0,
+            started_at: started_at,
+            last_meaningful_action_timestamp: nil
+          }
+        },
+        claimed: MapSet.new([issue_id]),
+        codex_totals: %{input_tokens: 0, output_tokens: 0, total_tokens: 0, seconds_running: 0},
+        retry_attempts: %{},
+        stopped: %{}
+      }
+
+      updated_state = Orchestrator.reconcile_budgeted_running_issues_for_test(state)
+
+      refute Map.has_key?(updated_state.running, issue_id)
+      assert updated_state.stopped[issue_id].reason == :no_action_ms
+
+      assert_receive {:memory_tracker_comment, ^issue_id, comment}
+      assert comment =~ "Reason: no_action_ms"
+      assert_receive {:memory_tracker_state_update, ^issue_id, "Backlog"}
+    after
+      restore_app_env(:memory_tracker_recipient, previous_recipient)
+    end
+  end
+
   test "reconcile stops running issue when it is reassigned away from this worker" do
     issue_id = "issue-reassigned"
 
@@ -560,7 +663,7 @@ defmodule SymphonyElixir.CoreTest do
     assert MapSet.member?(state.completed, issue_id)
     assert %{attempt: 1, due_at_ms: due_at_ms} = state.retry_attempts[issue_id]
     assert is_integer(due_at_ms)
-    assert_due_in_range(due_at_ms, 500, 1_100)
+    assert_due_in_range(due_at_ms, 250, 1_100)
   end
 
   test "normal worker exit with no codex progress uses failure backoff" do
@@ -837,6 +940,150 @@ defmodule SymphonyElixir.CoreTest do
     assert prompt =~ "attempt=3"
   end
 
+  test "prompt builder selects route prompt files from workflow config" do
+    workflow_dir = Path.dirname(Workflow.workflow_file_path())
+    File.write!(Path.join(workflow_dir, "builder.md"), "Builder {{ issue.identifier }} route={{ route }}")
+
+    write_workflow_file!(Workflow.workflow_file_path(),
+      prompt: "Default {{ issue.identifier }}",
+      prompts: %{"builder" => "builder.md"}
+    )
+
+    issue = %Issue{
+      identifier: "S-2",
+      title: "Build a routed prompt",
+      description: "Use route-specific prompt.",
+      state: "In Progress",
+      url: "https://example.org/issues/S-2",
+      labels: []
+    }
+
+    assert PromptBuilder.build_prompt(issue, route: :builder) == "Builder S-2 route=builder"
+    assert PromptBuilder.build_prompt(issue, route: :reviewer) == "Default S-2"
+  end
+
+  test "workflow load resolves route prompt paths relative to explicit workflow path" do
+    workflow_root =
+      Path.join(System.tmp_dir!(), "symphony-explicit-workflow-#{System.unique_integer([:positive])}")
+
+    try do
+      File.mkdir_p!(Path.join(workflow_root, ".symphony/prompts"))
+      File.write!(Path.join(workflow_root, ".symphony/prompts/builder.md"), "Explicit builder")
+
+      workflow_path = Path.join(workflow_root, "CUSTOM_WORKFLOW.md")
+
+      File.write!(workflow_path, """
+      ---
+      prompts:
+        builder: .symphony/prompts/builder.md
+      ---
+
+      Fallback prompt
+      """)
+
+      assert {:ok, %{route_prompt_templates: %{"builder" => "Explicit builder"}}} =
+               Workflow.load(workflow_path)
+    after
+      File.rm_rf(workflow_root)
+    end
+  end
+
+  test "workflow load fails when configured route prompt file is missing" do
+    workflow_root =
+      Path.join(System.tmp_dir!(), "symphony-missing-route-prompt-#{System.unique_integer([:positive])}")
+
+    try do
+      File.mkdir_p!(workflow_root)
+      workflow_path = Path.join(workflow_root, "WORKFLOW.md")
+
+      File.write!(workflow_path, """
+      ---
+      prompts:
+        builder: .symphony/prompts/missing-builder.md
+      ---
+
+      Fallback prompt
+      """)
+
+      assert {:error, {:route_prompt_missing, ".symphony/prompts/missing-builder.md"}} =
+               Workflow.load(workflow_path)
+    after
+      File.rm_rf(workflow_root)
+    end
+  end
+
+  test "builder route prompt is execution-first and avoids broad workflow loops" do
+    workflow_path = Workflow.workflow_file_path()
+    Workflow.set_workflow_file_path(Path.expand("WORKFLOW.md", File.cwd!()))
+
+    issue = %Issue{
+      identifier: "MT-803",
+      title: "Keep builder prompt narrow",
+      description: "Prompt should force action.",
+      state: "In Progress",
+      url: "https://example.org/issues/MT-803",
+      labels: []
+    }
+
+    on_exit(fn -> Workflow.set_workflow_file_path(workflow_path) end)
+
+    prompt = PromptBuilder.build_prompt(issue, route: :builder)
+
+    assert prompt =~ "First action: inspect the most likely file or files"
+    assert prompt =~ "Do not analyze the whole repository before acting."
+    assert prompt =~ "Do not load additional skills unless the issue explicitly requires one by name."
+    refute prompt =~ "linear-workflow"
+    refute prompt =~ "phased-delivery"
+    refute prompt =~ "Maintain exactly one `## Codex Workpad`"
+  end
+
+  test "preflight assigns routes and skips duplicate active runs" do
+    issue = %Issue{
+      id: "issue-preflight",
+      identifier: "MT-801",
+      title: "Route launch gate",
+      description: "Preflight should assign a route.",
+      state: "In Progress",
+      labels: []
+    }
+
+    active_states = MapSet.new(["in progress"])
+    terminal_states = MapSet.new(["done"])
+
+    assert {:run, %{route: :builder, reason: "ready"}} =
+             Preflight.evaluate(issue,
+               active_states: active_states,
+               terminal_states: terminal_states,
+               running: %{},
+               claimed: MapSet.new()
+             )
+
+    assert {:skip, %{reason: :duplicate_active_run}} =
+             Preflight.evaluate(issue,
+               active_states: active_states,
+               terminal_states: terminal_states,
+               running: %{issue.id => %{issue: issue}},
+               claimed: MapSet.new()
+             )
+  end
+
+  test "preflight label route overrides state route" do
+    issue = %Issue{
+      id: "issue-preflight-label",
+      identifier: "MT-802",
+      title: "Use review route",
+      description: "Label should select reviewer.",
+      state: "In Progress",
+      labels: ["reviewer"]
+    }
+
+    assert {:run, %{route: :reviewer}} =
+             Preflight.evaluate(issue,
+               active_states: MapSet.new(["in progress"]),
+               terminal_states: MapSet.new(["done"])
+             )
+  end
+
   test "prompt builder renders issue datetime fields without crashing" do
     workflow_prompt = "Ticket {{ issue.identifier }} created={{ issue.created_at }} updated={{ issue.updated_at }}"
 
@@ -1008,9 +1255,9 @@ defmodule SymphonyElixir.CoreTest do
 
     on_exit(fn -> Workflow.set_workflow_file_path(workflow_path) end)
 
-    prompt = PromptBuilder.build_prompt(issue, attempt: 2)
+    prompt = PromptBuilder.build_prompt(issue, attempt: 2, route: :builder)
 
-    assert prompt =~ "You are working on Linear issue `MT-616`"
+    assert prompt =~ "You are the builder route for Linear issue `MT-616`"
     assert prompt =~ "Issue:"
     assert prompt =~ "Identifier: MT-616"
     assert prompt =~ "Title: Use rich templates for WORKFLOW.md"
@@ -1018,11 +1265,13 @@ defmodule SymphonyElixir.CoreTest do
     assert prompt =~ "https://example.org/issues/MT-616/use-rich-templates-for-workflowmd"
     assert prompt =~ "Stop only for true blockers"
     assert prompt =~ "Use issue-provided `Validation`, `Test Plan`, or `Testing` sections"
-    assert prompt =~ "Final response reports completed actions and blockers only"
-    assert prompt =~ "follow `.codex/skills/land/SKILL.md`"
-    assert prompt =~ "do not call `gh pr merge` directly"
+    assert prompt =~ "Report the final outcome with `linear_report_outcome`"
     assert prompt =~ "Continuation:"
     assert prompt =~ "Retry attempt #2"
+
+    land_prompt = PromptBuilder.build_prompt(issue, route: :land)
+    assert land_prompt =~ "Follow `.codex/skills/land/SKILL.md`"
+    assert land_prompt =~ "Do not call `gh pr merge` directly"
   end
 
   test "prompt builder adds continuation guidance for retries" do

@@ -1,0 +1,78 @@
+[
+  {
+    "id": "phased-delivery-01",
+    "skill": "phased-delivery",
+    "should_trigger": true,
+    "started_at": "2026-05-04T11:09:14.014Z",
+    "finished_at": "2026-05-04T11:09:37.692Z",
+    "exit_code": 0,
+    "signal": null,
+    "jsonl_path": "evals/artifacts/phased-delivery-01.jsonl",
+    "final_path": "evals/artifacts/phased-delivery-01.final.txt",
+    "stderr": "Reading additional input from stdin...\n2026-05-04T11:09:14.071844Z  WARN codex_features: unknown feature key in config: remote_connections\n2026-05-04T11:09:14.286309Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: prompt must be at most 128 characters path=/Users/jaynorth/.codex/.tmp/plugins/plugins/build-ios-apps/.codex-plugin/plugin.json\n2026-05-04T11:09:14.286631Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: maximum of 3 prompts is supported path=/Users/jaynorth/.codex/.tmp/plugins/plugins/plugin-eval/.codex-plugin/plugin.json\n2026-05-04T11:09:16.715521Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: prompt must be at most 128 characters path=/Users/jaynorth/.codex/.tmp/plugins/plugins/build-ios-apps/.codex-plugin/plugin.json\n2026-05-04T11:09:16.715972Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: maximum of 3 prompts is supported path=/Users/jaynorth/.codex/.tmp/plugins/plugins/plugin-eval/.codex-plugin/plugin.json\n2026-05-04T11:09:16.731347Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:16.731366Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:16.731818Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:16.731829Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:16.732255Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:16.732262Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:16.732679Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:16.732682Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:16.733120Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:16.733127Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:16.734077Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:16.734081Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:17.666078Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: prompt must be at most 128 characters path=/Users/jaynorth/.codex/.tmp/plugins/plugins/build-ios-apps/.codex-plugin/plugin.json\n2026-05-04T11:09:17.666388Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: maximum of 3 prompts is supported path=/Users/jaynorth/.codex/.tmp/plugins/plugins/plugin-eval/.codex-plugin/plugin.json\n2026-05-04T11:09:17.680884Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:17.680903Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:17.681221Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:17.681225Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:17.681599Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:17.681605Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:17.681936Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:17.681939Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:17.682278Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:17.682285Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:17.683023Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:17.683026Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:23.871706Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: prompt must be at most 128 characters path=/Users/jaynorth/.codex/.tmp/plugins/plugins/build-ios-apps/.codex-plugin/plugin.json\n2026-05-04T11:09:23.871979Z  WARN codex_core_plugins::manifest: ignoring interface.defaultPrompt: maximum of 3 prompts is supported path=/Users/jaynorth/.codex/.tmp/plugins/plugins/plugin-eval/.codex-plugin/plugin.json\n2026-05-04T11:09:23.885277Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:23.885297Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:23.885687Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:23.885691Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:23.886058Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:23.886061Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:23.886448Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:23.886451Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:23.886833Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:23.886839Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:23.887713Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'\n2026-05-04T11:09:23.887719Z  WARN codex_core_skills::loader: ignoring interface.icon_large: icon path must not contain '..'\n2026-05-04T11:09:37.379107Z  WARN codex_core::session::turn: after_agent hook failed; continuing turn_id=019df2ad-92a9-7df3-af17-720d42d30d07 hook_name=legacy_notify error=No such file or directory (os error 2)\n",
+    "passed": true,
+    "command_execution_count": 2,
+    "checks": [
+      {
+        "id": "exit_code_zero",
+        "pass": true,
+        "notes": "exit_code=0"
+      },
+      {
+        "id": "jsonl_parseable",
+        "pass": true,
+        "notes": "ok"
+      },
+      {
+        "id": "final_contains:Phase Plan",
+        "pass": true,
+        "notes": "found"
+      },
+      {
+        "id": "final_contains:Current",
+        "pass": true,
+        "notes": "found"
+      },
+      {
+        "id": "final_contains:PR",
+        "pass": true,
+        "notes": "found"
+      },
+      {
+        "id": "final_contains:Rework",
+        "pass": true,
+        "notes": "found"
+      },
+      {
+        "id": "final_contains:Todo",
+        "pass": true,
+        "notes": "found"
+      },
+      {
+        "id": "trace_contains:phased-delivery",
+        "pass": true,
+        "notes": "found"
+      },
+      {
+        "id": "trace_excludes:linear_graphql",
+        "pass": true,
+        "notes": "absent"
+      },
+      {
+        "id": "trace_excludes:gh pr create",
+        "pass": true,
+        "notes": "absent"
+      },
+      {
+        "id": "trace_excludes:git push",
+        "pass": true,
+        "notes": "absent"
+      },
+      {
+        "id": "max_command_executions",
+        "pass": true,
+        "notes": "2/6"
+      }
+    ]
+  }
+]

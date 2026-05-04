@@ -1071,7 +1071,7 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
          rate_limits: nil
        }}
 
-    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0, 200)
 
     assert rendered =~ "https://linear.app/project/project/issues"
     refute rendered =~ "Dashboard:"
@@ -1099,12 +1099,71 @@ defmodule SymphonyElixir.OrchestratorStatusTest do
          rate_limits: nil
        }}
 
-    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0)
+    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0, 200)
 
     assert rendered =~ "Codex Runtime:"
     assert rendered =~ "WORKER AGE"
     refute rendered =~ "│ Runtime:"
     refute rendered =~ "AGE / TURN"
+  end
+
+  test "status dashboard renders route preflight and stop metadata" do
+    last_action = DateTime.from_naive!(~N[2026-05-04 12:00:00], "Etc/UTC")
+
+    snapshot_data =
+      {:ok,
+       %{
+         running: [
+           %{
+             identifier: "MT-ROUTE",
+             state: "In Progress",
+             route: :builder,
+             session_id: "thread-route-turn-route",
+             codex_app_server_pid: "12345",
+             codex_total_tokens: 42,
+             runtime_seconds: 75,
+             turn_count: 1,
+             last_meaningful_action_timestamp: last_action,
+             last_codex_event: "turn/started",
+             last_codex_message: nil
+           }
+         ],
+         retrying: [],
+         preflight: [
+           %{
+             issue_id: "issue-preflight",
+             identifier: "MT-PRE",
+             status: :skipped,
+             route: nil,
+             reason: :blocked_by_parent,
+             next_action: "not running"
+           }
+         ],
+         stopped: [
+           %{
+             issue_id: "issue-stop",
+             identifier: "MT-STOP",
+             route: :builder,
+             reason: :no_action_ms,
+             budget_status: :exceeded,
+             next_action: "human review"
+           }
+         ],
+         codex_totals: %{input_tokens: 10, output_tokens: 5, total_tokens: 15, seconds_running: 75},
+         rate_limits: nil
+       }}
+
+    rendered = StatusDashboard.format_snapshot_content_for_test(snapshot_data, 0.0, 200)
+
+    assert rendered =~ "route=builder"
+    assert rendered =~ "last_action=2026-05-04 12:00:00Z"
+    assert rendered =~ "├─ Preflight"
+    assert rendered =~ "MT-PRE"
+    assert rendered =~ "reason=blocked_by_parent"
+    assert rendered =~ "├─ Stops"
+    assert rendered =~ "MT-STOP"
+    assert rendered =~ "budget=exceeded"
+    assert rendered =~ "next=human review"
   end
 
   test "status dashboard renders dashboard url on its own line when server port is configured" do

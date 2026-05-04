@@ -3,11 +3,12 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   Executes client-side tool calls requested by Codex app-server turns.
   """
 
-  alias SymphonyElixir.{Linear.Issue, Tracker}
+  alias SymphonyElixir.{Linear.Issue, Outcome, StateTransition, Tracker}
 
   @linear_get_issue_tool "linear_get_issue"
   @linear_create_comment_tool "linear_create_comment"
   @linear_update_issue_state_tool "linear_update_issue_state"
+  @linear_report_outcome_tool "linear_report_outcome"
 
   @issue_id_property %{
     "type" => "string",
@@ -54,6 +55,41 @@ defmodule SymphonyElixir.Codex.DynamicTool do
       }
     }
   }
+  @linear_report_outcome_description """
+  Report the agent outcome for Symphony to evaluate without directly mutating tracker state.
+  """
+  @linear_report_outcome_input_schema %{
+    "type" => "object",
+    "additionalProperties" => false,
+    "required" => ["issue_id", "route", "status"],
+    "properties" => %{
+      "issue_id" => @issue_id_property,
+      "route" => %{
+        "type" => "string",
+        "description" => "Symphony route that produced the outcome, such as planner, builder, reviewer, rework, or land."
+      },
+      "status" => %{
+        "type" => "string",
+        "description" => "Outcome status, such as ready, ready_for_review, accepted, merged, missing_validation, or blocked."
+      },
+      "validation" => %{
+        "type" => "string",
+        "description" => "Validation result summary, such as passed, failed, or blocked."
+      },
+      "pr_url" => %{
+        "type" => "string",
+        "description" => "Pull request URL when the route produced or updated a PR."
+      },
+      "merged" => %{
+        "type" => "boolean",
+        "description" => "Whether the linked PR has been merged."
+      },
+      "unresolved_comments" => %{
+        "type" => "boolean",
+        "description" => "Whether review still has unresolved actionable comments."
+      }
+    }
+  }
 
   @spec execute(String.t() | nil, term(), keyword()) :: map()
   def execute(tool, arguments, opts \\ []) do
@@ -66,6 +102,9 @@ defmodule SymphonyElixir.Codex.DynamicTool do
 
       @linear_update_issue_state_tool ->
         execute_linear_update_issue_state(arguments, opts)
+
+      @linear_report_outcome_tool ->
+        execute_linear_report_outcome(arguments, opts)
 
       other ->
         failure_response(%{
@@ -94,6 +133,11 @@ defmodule SymphonyElixir.Codex.DynamicTool do
         "name" => @linear_update_issue_state_tool,
         "description" => @linear_update_issue_state_description,
         "inputSchema" => @linear_update_issue_state_input_schema
+      },
+      %{
+        "name" => @linear_report_outcome_tool,
+        "description" => @linear_report_outcome_description,
+        "inputSchema" => @linear_report_outcome_input_schema
       }
     ]
   end
@@ -136,6 +180,28 @@ defmodule SymphonyElixir.Codex.DynamicTool do
     end
   end
 
+  defp execute_linear_report_outcome(arguments, opts) do
+    outcome_reporter = Keyword.get(opts, :outcome_reporter, fn _issue_id, _route, _outcome, _decision -> :ok end)
+
+    with {:ok, issue_id} <- required_string(arguments, "issue_id"),
+         {:ok, route} <- required_string(arguments, "route"),
+         {:ok, status} <- required_string(arguments, "status"),
+         {:ok, outcome} <- Outcome.from_map(Map.put(arguments, "status", status)),
+         decision <- StateTransition.decide(route, outcome),
+         :ok <- outcome_reporter.(issue_id, route, outcome, decision) do
+      dynamic_tool_response(
+        true,
+        encode_payload(%{
+          "ok" => true,
+          "decision" => transition_payload(decision)
+        })
+      )
+    else
+      {:error, reason} ->
+        failure_response(tool_error_payload(reason))
+    end
+  end
+
   defp required_string(arguments, field) when is_map(arguments) do
     case Map.get(arguments, field) || Map.get(arguments, String.to_atom(field)) do
       value when is_binary(value) ->
@@ -171,6 +237,18 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   end
 
   defp issue_payload(issue), do: issue
+
+  defp transition_payload({:transition, state, reason}) do
+    %{"action" => "transition", "state" => state, "reason" => reason}
+  end
+
+  defp transition_payload({:stay, reason}) do
+    %{"action" => "stay", "reason" => reason}
+  end
+
+  defp transition_payload({:blocked, reason}) do
+    %{"action" => "blocked", "reason" => reason}
+  end
 
   defp encode_datetime(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
   defp encode_datetime(_datetime), do: nil

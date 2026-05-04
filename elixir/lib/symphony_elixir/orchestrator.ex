@@ -7,7 +7,7 @@ defmodule SymphonyElixir.Orchestrator do
   require Logger
   import Bitwise, only: [<<<: 2]
 
-  alias SymphonyElixir.{AgentRunner, Config, StatusDashboard, Tracker, Workspace}
+  alias SymphonyElixir.{AgentRunner, Config, Preflight, StatusDashboard, Tracker, Workspace}
   alias SymphonyElixir.Linear.Issue
 
   @continuation_retry_delay_ms 1_000
@@ -37,6 +37,8 @@ defmodule SymphonyElixir.Orchestrator do
       completed: MapSet.new(),
       claimed: MapSet.new(),
       retry_attempts: %{},
+      preflight_decisions: %{},
+      stopped: %{},
       codex_totals: nil,
       codex_rate_limits: nil
     ]
@@ -326,6 +328,12 @@ defmodule SymphonyElixir.Orchestrator do
   end
 
   @doc false
+  @spec preflight_issue_for_test(Issue.t(), term()) :: Preflight.decision()
+  def preflight_issue_for_test(%Issue{} = issue, %State{} = state) do
+    preflight_issue(issue, state, active_state_set(), terminal_state_set())
+  end
+
+  @doc false
   @spec reconcile_budgeted_running_issues_for_test(term()) :: term()
   def reconcile_budgeted_running_issues_for_test(%State{} = state) do
     reconcile_budgeted_running_issues(state)
@@ -424,9 +432,11 @@ defmodule SymphonyElixir.Orchestrator do
     config = Config.settings!().agent
     max_runtime_ms = Map.get(config, :max_issue_runtime_ms, 0)
     max_tokens = Map.get(config, :max_issue_tokens, 0)
+    max_input_tokens = Map.get(config, :max_issue_input_tokens, 0)
+    max_no_action_ms = Map.get(config, :max_no_action_ms, 0)
 
     cond do
-      max_runtime_ms <= 0 and max_tokens <= 0 ->
+      max_runtime_ms <= 0 and max_tokens <= 0 and max_input_tokens <= 0 and max_no_action_ms <= 0 ->
         state
 
       map_size(state.running) == 0 ->
@@ -436,13 +446,31 @@ defmodule SymphonyElixir.Orchestrator do
         now = DateTime.utc_now()
 
         Enum.reduce(state.running, state, fn {issue_id, running_entry}, state_acc ->
-          stop_budgeted_issue(state_acc, issue_id, running_entry, now, max_runtime_ms, max_tokens)
+          stop_budgeted_issue(
+            state_acc,
+            issue_id,
+            running_entry,
+            now,
+            max_runtime_ms,
+            max_tokens,
+            max_input_tokens,
+            max_no_action_ms
+          )
         end)
     end
   end
 
-  defp stop_budgeted_issue(state, issue_id, running_entry, now, max_runtime_ms, max_tokens) do
-    case budget_violation(running_entry, now, max_runtime_ms, max_tokens) do
+  defp stop_budgeted_issue(
+         state,
+         issue_id,
+         running_entry,
+         now,
+         max_runtime_ms,
+         max_tokens,
+         max_input_tokens,
+         max_no_action_ms
+       ) do
+    case budget_violation(running_entry, now, max_runtime_ms, max_tokens, max_input_tokens, max_no_action_ms) do
       nil ->
         state
 
@@ -454,18 +482,29 @@ defmodule SymphonyElixir.Orchestrator do
           "Issue budget exceeded: issue_id=#{issue_id} issue_identifier=#{identifier} session_id=#{session_id} reason=#{reason} value=#{value} limit=#{limit}; moving to Backlog and stopping active agent"
         )
 
-        move_budgeted_issue_to_backlog(issue_id, identifier, reason, value, limit)
-        terminate_running_issue(state, issue_id, false)
+        stop_budgeted_issue_in_tracker(issue_id, identifier, reason, value, limit)
+
+        state
+        |> terminate_running_issue(issue_id, false)
+        |> record_stopped_issue(running_entry, reason, value, limit)
     end
   end
 
-  defp budget_violation(running_entry, now, max_runtime_ms, max_tokens) do
+  defp budget_violation(running_entry, now, max_runtime_ms, max_tokens, max_input_tokens, max_no_action_ms) do
     runtime_ms = running_runtime_ms(running_entry, now)
+    no_action_ms = no_action_elapsed_ms(running_entry, now)
+    input_tokens = Map.get(running_entry, :codex_input_tokens, 0)
     total_tokens = Map.get(running_entry, :codex_total_tokens, 0)
 
     cond do
       max_runtime_ms > 0 and is_integer(runtime_ms) and runtime_ms > max_runtime_ms ->
         {:runtime_ms, runtime_ms, max_runtime_ms}
+
+      max_no_action_ms > 0 and is_integer(no_action_ms) and no_action_ms > max_no_action_ms ->
+        {:no_action_ms, no_action_ms, max_no_action_ms}
+
+      max_input_tokens > 0 and is_integer(input_tokens) and input_tokens > max_input_tokens ->
+        {:input_tokens, input_tokens, max_input_tokens}
 
       max_tokens > 0 and is_integer(total_tokens) and total_tokens > max_tokens ->
         {:tokens, total_tokens, max_tokens}
@@ -482,7 +521,32 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
-  defp move_budgeted_issue_to_backlog(issue_id, identifier, reason, value, limit) do
+  defp no_action_elapsed_ms(running_entry, now) do
+    case Map.get(running_entry, :last_meaningful_action_timestamp) || Map.get(running_entry, :started_at) do
+      %DateTime{} = timestamp -> max(0, DateTime.diff(now, timestamp, :millisecond))
+      _ -> nil
+    end
+  end
+
+  defp stop_budgeted_issue_in_tracker(issue_id, identifier, reason, value, limit) do
+    comment = """
+    ## Symphony Stop
+
+    Agent stopped before completion.
+
+    Reason: #{reason}
+    Observed: #{value}
+    Limit: #{limit}
+    """
+
+    case Tracker.create_comment(issue_id, comment) do
+      :ok ->
+        Logger.info("Commented on stopped issue: issue_id=#{issue_id} issue_identifier=#{identifier} reason=#{reason}")
+
+      {:error, comment_reason} ->
+        Logger.error("Failed to comment on stopped issue: issue_id=#{issue_id} issue_identifier=#{identifier} reason=#{reason} error=#{inspect(comment_reason)}")
+    end
+
     case Tracker.update_issue_state(issue_id, "Backlog") do
       :ok ->
         Logger.info("Moved budget-exceeded issue to Backlog: issue_id=#{issue_id} issue_identifier=#{identifier} reason=#{reason} value=#{value} limit=#{limit}")
@@ -493,6 +557,30 @@ defmodule SymphonyElixir.Orchestrator do
         )
     end
   end
+
+  defp record_stopped_issue(%State{} = state, running_entry, reason, value, limit) when is_map(running_entry) do
+    issue_id = running_entry |> Map.get(:issue, %{}) |> Map.get(:id)
+
+    if is_binary(issue_id) do
+      stopped_entry = %{
+        issue_id: issue_id,
+        identifier: Map.get(running_entry, :identifier),
+        route: Map.get(running_entry, :route),
+        reason: reason,
+        value: value,
+        limit: limit,
+        budget_status: :exceeded,
+        next_action: "human review",
+        stopped_at: DateTime.utc_now()
+      }
+
+      %{state | stopped: Map.put(state.stopped, issue_id, stopped_entry)}
+    else
+      state
+    end
+  end
+
+  defp record_stopped_issue(state, _running_entry, _reason, _value, _limit), do: state
 
   defp refresh_running_issue_state(%State{} = state, %Issue{} = issue) do
     case Map.get(state.running, issue.id) do
@@ -611,16 +699,70 @@ defmodule SymphonyElixir.Orchestrator do
   defp choose_issues(issues, state) do
     active_states = active_state_set()
     terminal_states = terminal_state_set()
+    candidate_issue_ids = candidate_issue_ids(issues)
+    state = %{state | preflight_decisions: Map.take(state.preflight_decisions, candidate_issue_ids)}
 
     issues
     |> sort_issues_for_dispatch()
     |> Enum.reduce(state, fn issue, state_acc ->
-      if should_dispatch_issue?(issue, state_acc, active_states, terminal_states) do
-        dispatch_issue(state_acc, issue)
-      else
-        state_acc
+      decision = preflight_issue(issue, state_acc, active_states, terminal_states)
+      state_acc = record_preflight_decision(state_acc, issue, decision)
+
+      case decision do
+        {:run, _metadata} -> dispatch_issue(state_acc, issue)
+        _ -> state_acc
       end
     end)
+  end
+
+  defp candidate_issue_ids(issues) when is_list(issues) do
+    issues
+    |> Enum.flat_map(fn
+      %Issue{id: issue_id} when is_binary(issue_id) -> [issue_id]
+      _ -> []
+    end)
+  end
+
+  defp record_preflight_decision(%State{} = state, %Issue{} = issue, decision) do
+    case preflight_decision_entry(issue, decision) do
+      nil -> state
+      entry -> %{state | preflight_decisions: Map.put(state.preflight_decisions, issue.id, entry)}
+    end
+  end
+
+  defp preflight_decision_entry(%Issue{id: issue_id}, _decision) when not is_binary(issue_id), do: nil
+
+  defp preflight_decision_entry(%Issue{} = issue, {:run, %{route: route, reason: reason}}) do
+    %{
+      issue_id: issue.id,
+      identifier: issue.identifier,
+      route: route,
+      status: :ready,
+      reason: reason,
+      next_action: "launch Codex"
+    }
+  end
+
+  defp preflight_decision_entry(%Issue{} = issue, {:skip, %{reason: reason}}) do
+    %{
+      issue_id: issue.id,
+      identifier: issue.identifier,
+      route: nil,
+      status: :skipped,
+      reason: reason,
+      next_action: "not running"
+    }
+  end
+
+  defp preflight_decision_entry(%Issue{} = issue, {:stop, %{reason: reason}}) do
+    %{
+      issue_id: issue.id,
+      identifier: issue.identifier,
+      route: nil,
+      status: :stopped,
+      reason: reason,
+      next_action: "human review"
+    }
   end
 
   defp sort_issues_for_dispatch(issues) when is_list(issues) do
@@ -645,20 +787,26 @@ defmodule SymphonyElixir.Orchestrator do
 
   defp should_dispatch_issue?(
          %Issue{} = issue,
-         %State{running: running, claimed: claimed} = state,
+         %State{} = state,
          active_states,
          terminal_states
        ) do
-    candidate_issue?(issue, active_states, terminal_states) and
-      !todo_issue_blocked_by_non_terminal?(issue, terminal_states) and
-      !MapSet.member?(claimed, issue.id) and
-      !Map.has_key?(running, issue.id) and
-      available_slots(state) > 0 and
-      state_slots_available?(issue, running) and
-      worker_slots_available?(state)
+    match?({:run, _metadata}, preflight_issue(issue, state, active_states, terminal_states))
   end
 
   defp should_dispatch_issue?(_issue, _state, _active_states, _terminal_states), do: false
+
+  defp preflight_issue(%Issue{} = issue, %State{} = state, active_states, terminal_states) do
+    Preflight.evaluate(issue,
+      active_states: active_states,
+      terminal_states: terminal_states,
+      running: state.running,
+      claimed: state.claimed,
+      slots_available?: available_slots(state) > 0,
+      state_slots_available?: state_slots_available?(issue, state.running),
+      worker_slots_available?: worker_slots_available?(state)
+    )
+  end
 
   defp state_slots_available?(%Issue{state: issue_state}, running) when is_map(running) do
     limit = Config.max_concurrent_agents_for_state(issue_state)
@@ -752,7 +900,18 @@ defmodule SymphonyElixir.Orchestrator do
   defp dispatch_issue(%State{} = state, issue, attempt \\ nil, preferred_worker_host \\ nil) do
     case revalidate_issue_for_dispatch(issue, &Tracker.fetch_issue_states_by_ids/1, terminal_state_set()) do
       {:ok, %Issue{} = refreshed_issue} ->
-        do_dispatch_issue(state, refreshed_issue, attempt, preferred_worker_host)
+        case preflight_issue(refreshed_issue, state, active_state_set(), terminal_state_set()) do
+          {:run, %{route: route}} ->
+            do_dispatch_issue(state, refreshed_issue, attempt, preferred_worker_host, route)
+
+          {:skip, %{reason: reason}} ->
+            Logger.info("Skipping dispatch after preflight: #{issue_context(refreshed_issue)} reason=#{reason}")
+            state
+
+          {:stop, %{reason: reason}} ->
+            Logger.warning("Stopping dispatch after preflight: #{issue_context(refreshed_issue)} reason=#{reason}")
+            state
+        end
 
       {:skip, :missing} ->
         Logger.info("Skipping dispatch; issue no longer active or visible: #{issue_context(issue)}")
@@ -769,7 +928,7 @@ defmodule SymphonyElixir.Orchestrator do
     end
   end
 
-  defp do_dispatch_issue(%State{} = state, issue, attempt, preferred_worker_host) do
+  defp do_dispatch_issue(%State{} = state, issue, attempt, preferred_worker_host, route) do
     recipient = self()
 
     case select_worker_host(state, preferred_worker_host) do
@@ -778,18 +937,18 @@ defmodule SymphonyElixir.Orchestrator do
         state
 
       worker_host ->
-        spawn_issue_on_worker_host(state, issue, attempt, recipient, worker_host)
+        spawn_issue_on_worker_host(state, issue, attempt, recipient, worker_host, route)
     end
   end
 
-  defp spawn_issue_on_worker_host(%State{} = state, issue, attempt, recipient, worker_host) do
+  defp spawn_issue_on_worker_host(%State{} = state, issue, attempt, recipient, worker_host, route) do
     case Task.Supervisor.start_child(SymphonyElixir.TaskSupervisor, fn ->
-           AgentRunner.run(issue, recipient, attempt: attempt, worker_host: worker_host)
+           AgentRunner.run(issue, recipient, attempt: attempt, worker_host: worker_host, route: route)
          end) do
       {:ok, pid} ->
         ref = Process.monitor(pid)
 
-        Logger.info("Dispatching issue to agent: #{issue_context(issue)} pid=#{inspect(pid)} attempt=#{inspect(attempt)} worker_host=#{worker_host || "local"}")
+        Logger.info("Dispatching issue to agent: #{issue_context(issue)} pid=#{inspect(pid)} attempt=#{inspect(attempt)} route=#{route} worker_host=#{worker_host || "local"}")
 
         running =
           Map.put(state.running, issue.id, %{
@@ -797,12 +956,14 @@ defmodule SymphonyElixir.Orchestrator do
             ref: ref,
             identifier: issue.identifier,
             issue: issue,
+            route: route,
             worker_host: worker_host,
             workspace_path: nil,
             session_id: nil,
             last_codex_message: nil,
             last_codex_timestamp: nil,
             last_codex_event: nil,
+            last_meaningful_action_timestamp: nil,
             codex_app_server_pid: nil,
             codex_input_tokens: 0,
             codex_output_tokens: 0,
@@ -1211,6 +1372,7 @@ defmodule SymphonyElixir.Orchestrator do
           identifier: metadata.identifier,
           state: metadata.issue.state,
           labels: metadata.issue.labels,
+          route: Map.get(metadata, :route),
           worker_host: Map.get(metadata, :worker_host),
           workspace_path: Map.get(metadata, :workspace_path),
           session_id: metadata.session_id,
@@ -1221,8 +1383,15 @@ defmodule SymphonyElixir.Orchestrator do
           turn_count: Map.get(metadata, :turn_count, 0),
           started_at: metadata.started_at,
           last_codex_timestamp: metadata.last_codex_timestamp,
+          last_meaningful_action_timestamp: Map.get(metadata, :last_meaningful_action_timestamp),
           last_codex_message: metadata.last_codex_message,
           last_codex_event: metadata.last_codex_event,
+          budget_status: :running,
+          next_action:
+            if(is_nil(Map.get(metadata, :last_meaningful_action_timestamp)),
+              do: "awaiting action",
+              else: "continue"
+            ),
           runtime_seconds: running_seconds(metadata.started_at, now)
         }
       end)
@@ -1241,10 +1410,22 @@ defmodule SymphonyElixir.Orchestrator do
         }
       end)
 
+    preflight =
+      state.preflight_decisions
+      |> Map.values()
+      |> Enum.sort_by(&(&1.identifier || &1.issue_id || ""))
+
+    stopped =
+      state.stopped
+      |> Map.values()
+      |> Enum.sort_by(&(&1.identifier || &1.issue_id || ""))
+
     {:reply,
      %{
        running: running,
        retrying: retrying,
+       preflight: preflight,
+       stopped: stopped,
        codex_totals: state.codex_totals,
        rate_limits: Map.get(state, :codex_rate_limits),
        polling: %{
@@ -1280,11 +1461,13 @@ defmodule SymphonyElixir.Orchestrator do
     last_reported_output = Map.get(running_entry, :codex_last_reported_output_tokens, 0)
     last_reported_total = Map.get(running_entry, :codex_last_reported_total_tokens, 0)
     turn_count = Map.get(running_entry, :turn_count, 0)
+    last_meaningful_action_timestamp = update_meaningful_action_timestamp(running_entry, update)
 
     {
       Map.merge(running_entry, %{
         last_codex_timestamp: timestamp,
         last_codex_message: summarize_codex_update(update),
+        last_meaningful_action_timestamp: last_meaningful_action_timestamp,
         session_id: session_id_for_update(running_entry.session_id, update),
         last_codex_event: event,
         codex_app_server_pid: codex_app_server_pid_for_update(codex_app_server_pid, update),
@@ -1335,6 +1518,29 @@ defmodule SymphonyElixir.Orchestrator do
        do: existing_count
 
   defp turn_count_for_update(_existing_count, _existing_session_id, _update), do: 0
+
+  defp update_meaningful_action_timestamp(running_entry, %{timestamp: %DateTime{} = timestamp} = update) do
+    if meaningful_action_update?(update) do
+      timestamp
+    else
+      Map.get(running_entry, :last_meaningful_action_timestamp)
+    end
+  end
+
+  defp update_meaningful_action_timestamp(running_entry, _update),
+    do: Map.get(running_entry, :last_meaningful_action_timestamp)
+
+  defp meaningful_action_update?(%{event: event}) when event in [:tool_call_completed, :approval_auto_approved],
+    do: true
+
+  defp meaningful_action_update?(%{payload: %{"method" => method}}) when is_binary(method) do
+    String.starts_with?(method, "item/tool/") or
+      String.starts_with?(method, "item/commandExecution/") or
+      String.starts_with?(method, "item/fileChange/") or
+      method in ["execCommandApproval", "applyPatchApproval"]
+  end
+
+  defp meaningful_action_update?(_update), do: false
 
   defp summarize_codex_update(update) do
     %{

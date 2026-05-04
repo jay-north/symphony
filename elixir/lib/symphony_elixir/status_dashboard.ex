@@ -315,6 +315,8 @@ defmodule SymphonyElixir.StatusDashboard do
            %{
              running: running,
              retrying: retrying,
+             preflight: Map.get(snapshot, :preflight, []),
+             stopped: Map.get(snapshot, :stopped, []),
              codex_totals: codex_totals,
              rate_limits: Map.get(snapshot, :rate_limits),
              polling: Map.get(snapshot, :polling)
@@ -333,6 +335,8 @@ defmodule SymphonyElixir.StatusDashboard do
   defp format_snapshot_content(snapshot_data, tps, terminal_columns_override \\ nil) do
     case snapshot_data do
       {:ok, %{running: running, retrying: retrying, codex_totals: codex_totals} = snapshot} ->
+        preflight = Map.get(snapshot, :preflight, [])
+        stopped = Map.get(snapshot, :stopped, [])
         rate_limits = Map.get(snapshot, :rate_limits)
         project_link_lines = format_project_link_lines()
         project_refresh_line = format_project_refresh_line(Map.get(snapshot, :polling))
@@ -346,6 +350,8 @@ defmodule SymphonyElixir.StatusDashboard do
         running_rows = format_running_rows(running, running_event_width)
         running_to_backoff_spacer = if(running == [], do: [], else: ["│"])
         backoff_rows = format_retry_rows(retrying)
+        preflight_rows = format_preflight_rows(preflight)
+        stopped_rows = format_stopped_rows(stopped)
 
         ([
            colorize("╭─ SYMPHONY STATUS", @ansi_bold),
@@ -374,6 +380,10 @@ defmodule SymphonyElixir.StatusDashboard do
            running_to_backoff_spacer ++
            [colorize("├─ Backoff queue", @ansi_bold), "│"] ++
            backoff_rows ++
+           ["│", colorize("├─ Preflight", @ansi_bold), "│"] ++
+           preflight_rows ++
+           ["│", colorize("├─ Stops", @ansi_bold), "│"] ++
+           stopped_rows ++
            [closing_border()])
         |> List.flatten()
         |> Enum.join("\n")
@@ -560,6 +570,8 @@ defmodule SymphonyElixir.StatusDashboard do
            %{
              running: running,
              retrying: retrying,
+             preflight: Map.get(snapshot, :preflight, []),
+             stopped: Map.get(snapshot, :stopped, []),
              codex_totals: codex_totals,
              rate_limits: Map.get(snapshot, :rate_limits),
              polling: Map.get(snapshot, :polling)
@@ -598,7 +610,10 @@ defmodule SymphonyElixir.StatusDashboard do
     turn_count = Map.get(running_entry, :turn_count, 0)
     age = format_cell(format_runtime_and_turns(runtime_seconds, turn_count), @running_age_width)
     event = running_entry.last_codex_event || "none"
-    event_label = format_cell(summarize_message(running_entry.last_codex_message), running_event_width)
+    event_label =
+      running_entry
+      |> running_next_action()
+      |> format_cell(running_event_width)
 
     tokens = format_count(total_tokens) |> format_cell(@running_tokens_width, :right)
 
@@ -700,6 +715,82 @@ defmodule SymphonyElixir.StatusDashboard do
   end
 
   defp format_retry_error(_), do: ""
+
+  defp format_preflight_rows(preflight) do
+    if preflight == [] do
+      ["│  " <> colorize("No recent preflight decisions", @ansi_gray)]
+    else
+      preflight
+      |> Enum.sort_by(&(&1.identifier || &1.issue_id || ""))
+      |> Enum.map(&format_preflight_summary/1)
+    end
+  end
+
+  defp format_preflight_summary(entry) do
+    identifier = Map.get(entry, :identifier) || Map.get(entry, :issue_id) || "unknown"
+    decision = Map.get(entry, :decision) || Map.get(entry, :status) || "unknown"
+    reason = Map.get(entry, :reason) || "n/a"
+    route = Map.get(entry, :route) || "n/a"
+    next_action = Map.get(entry, :next_action) || "n/a"
+
+    "│  " <>
+      colorize("#{identifier}", @ansi_cyan) <>
+      " " <>
+      colorize("decision=#{decision}", @ansi_yellow) <>
+      colorize(" route=#{route}", @ansi_magenta) <>
+      colorize(" reason=#{reason}", @ansi_dim) <>
+      colorize(" next=#{next_action}", @ansi_green)
+  end
+
+  defp format_stopped_rows(stopped) do
+    if stopped == [] do
+      ["│  " <> colorize("No stopped agents", @ansi_gray)]
+    else
+      stopped
+      |> Enum.sort_by(&(&1.identifier || &1.issue_id || ""))
+      |> Enum.map(&format_stopped_summary/1)
+    end
+  end
+
+  defp format_stopped_summary(entry) do
+    identifier = Map.get(entry, :identifier) || Map.get(entry, :issue_id) || "unknown"
+    route = Map.get(entry, :route) || "n/a"
+    reason = Map.get(entry, :reason) || "n/a"
+    budget_status = Map.get(entry, :budget_status) || "n/a"
+    next_action = Map.get(entry, :next_action) || "n/a"
+
+    "│  " <>
+      colorize("#{identifier}", @ansi_red) <>
+      " " <>
+      colorize("route=#{route}", @ansi_magenta) <>
+      colorize(" reason=#{reason}", @ansi_yellow) <>
+      colorize(" budget=#{budget_status}", @ansi_orange) <>
+      colorize(" next=#{next_action}", @ansi_green)
+  end
+
+  defp running_next_action(running_entry) do
+    [
+      summarize_message(running_entry.last_codex_message),
+      "route=#{Map.get(running_entry, :route) || "n/a"}",
+      "budget=#{budget_status(running_entry)}",
+      "last_action=#{format_optional_timestamp(Map.get(running_entry, :last_meaningful_action_timestamp))}",
+      "next=#{next_action_for_running(running_entry)}"
+    ]
+    |> Enum.reject(&(&1 in [nil, ""]))
+    |> Enum.join(" | ")
+  end
+
+  defp budget_status(%{stop_reason: reason}) when not is_nil(reason), do: "stopped:#{reason}"
+  defp budget_status(%{codex_total_tokens: total}) when is_integer(total), do: "running"
+  defp budget_status(_running_entry), do: "running"
+
+  defp next_action_for_running(running_entry) do
+    if is_nil(Map.get(running_entry, :last_meaningful_action_timestamp)) do
+      "awaiting action"
+    else
+      "continue"
+    end
+  end
 
   defp format_runtime_seconds(seconds) when is_integer(seconds) do
     mins = div(seconds, 60)
@@ -1056,6 +1147,9 @@ defmodule SymphonyElixir.StatusDashboard do
     |> DateTime.truncate(:second)
     |> DateTime.to_string()
   end
+
+  defp format_optional_timestamp(%DateTime{} = datetime), do: format_timestamp(datetime)
+  defp format_optional_timestamp(_datetime), do: "none"
 
   defp normalize_status_lines(content) do
     content
