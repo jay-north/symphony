@@ -348,6 +348,7 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "issue_id" => "issue-http",
                  "issue_identifier" => "MT-HTTP",
                  "state" => "In Progress",
+                 "labels" => ["large-refactor"],
                  "worker_host" => nil,
                  "workspace_path" => nil,
                  "session_id" => "thread-http",
@@ -359,6 +360,12 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "handoff_readiness" => %{
                    "status" => "missing_required_artifacts",
                    "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+                 },
+                 "delivery_tracking" => %{
+                   "mode" => "phased",
+                   "status" => "phase_plan_needed",
+                   "current_phase" => nil,
+                   "next_action" => "create/update Phase Plan and select exactly one current phase"
                  },
                  "tokens" => %{"input_tokens" => 4, "output_tokens" => 8, "total_tokens" => 12}
                }
@@ -401,6 +408,7 @@ defmodule SymphonyElixir.ExtensionsTest do
                "session_id" => "thread-http",
                "turn_count" => 7,
                "state" => "In Progress",
+               "labels" => ["large-refactor"],
                "started_at" => issue_payload["running"]["started_at"],
                "last_event" => "notification",
                "last_message" => "rendered",
@@ -409,12 +417,24 @@ defmodule SymphonyElixir.ExtensionsTest do
                  "status" => "missing_required_artifacts",
                  "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
                },
+               "delivery_tracking" => %{
+                 "mode" => "phased",
+                 "status" => "phase_plan_needed",
+                 "current_phase" => nil,
+                 "next_action" => "create/update Phase Plan and select exactly one current phase"
+               },
                "tokens" => %{"input_tokens" => 4, "output_tokens" => 8, "total_tokens" => 12}
              },
              "retry" => nil,
              "handoff_readiness" => %{
                "status" => "missing_required_artifacts",
                "reason" => "handoff packet, validation, artifacts, and feedback sweep are not yet complete"
+             },
+             "delivery_tracking" => %{
+               "mode" => "phased",
+               "status" => "phase_plan_needed",
+               "current_phase" => nil,
+               "next_action" => "create/update Phase Plan and select exactly one current phase"
              },
              "logs" => %{"codex_session_logs" => []},
              "recent_events" => [],
@@ -560,6 +580,9 @@ defmodule SymphonyElixir.ExtensionsTest do
     assert html =~ "Offline"
     assert html =~ "Copy ID"
     assert html =~ "Codex update"
+    assert html =~ "Delivery"
+    assert html =~ "Phased"
+    assert html =~ "phase plan needed"
     refute html =~ "data-runtime-clock="
     refute html =~ "setInterval(refreshRuntimeClocks"
     refute html =~ "Refresh now"
@@ -573,6 +596,7 @@ defmodule SymphonyElixir.ExtensionsTest do
           issue_id: "issue-http",
           identifier: "MT-HTTP",
           state: "In Progress",
+          labels: ["large-refactor"],
           session_id: "thread-http",
           turn_count: 8,
           last_codex_event: :notification,
@@ -702,6 +726,7 @@ defmodule SymphonyElixir.ExtensionsTest do
           issue_id: "issue-http",
           identifier: "MT-HTTP",
           state: "In Progress",
+          labels: ["large-refactor"],
           session_id: "thread-http",
           turn_count: 7,
           codex_app_server_pid: nil,

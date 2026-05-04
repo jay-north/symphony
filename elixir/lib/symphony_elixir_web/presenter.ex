@@ -76,6 +76,7 @@ defmodule SymphonyElixirWeb.Presenter do
       running: running && running_issue_payload(running),
       retry: retry && retry_issue_payload(retry),
       handoff_readiness: handoff_readiness(running, retry),
+      delivery_tracking: delivery_tracking(running, retry),
       logs: %{
         codex_session_logs: []
       },
@@ -101,6 +102,7 @@ defmodule SymphonyElixirWeb.Presenter do
       issue_id: entry.issue_id,
       issue_identifier: entry.identifier,
       state: entry.state,
+      labels: labels(entry),
       worker_host: Map.get(entry, :worker_host),
       workspace_path: Map.get(entry, :workspace_path),
       session_id: entry.session_id,
@@ -110,6 +112,7 @@ defmodule SymphonyElixirWeb.Presenter do
       started_at: iso8601(entry.started_at),
       last_event_at: iso8601(entry.last_codex_timestamp),
       handoff_readiness: handoff_readiness(entry, nil),
+      delivery_tracking: delivery_tracking(entry, nil),
       tokens: %{
         input_tokens: entry.codex_input_tokens,
         output_tokens: entry.codex_output_tokens,
@@ -137,11 +140,13 @@ defmodule SymphonyElixirWeb.Presenter do
       session_id: running.session_id,
       turn_count: Map.get(running, :turn_count, 0),
       state: running.state,
+      labels: labels(running),
       started_at: iso8601(running.started_at),
       last_event: running.last_codex_event,
       last_message: summarize_message(running.last_codex_message),
       last_event_at: iso8601(running.last_codex_timestamp),
       handoff_readiness: handoff_readiness(running, nil),
+      delivery_tracking: delivery_tracking(running, nil),
       tokens: %{
         input_tokens: running.codex_input_tokens,
         output_tokens: running.codex_output_tokens,
@@ -211,6 +216,115 @@ defmodule SymphonyElixirWeb.Presenter do
 
   defp handoff_readiness(_running, _retry) do
     %{status: "missing_required_artifacts", reason: "issue is not currently running or retrying"}
+  end
+
+  defp delivery_tracking(nil, retry) when is_map(retry) do
+    %{
+      mode: "unknown",
+      status: "retrying",
+      current_phase: nil,
+      next_action: retry.error || "retry scheduled before delivery can continue"
+    }
+  end
+
+  defp delivery_tracking(running, _retry) when is_map(running) do
+    handoff = handoff_readiness(running, nil)
+    message = summarize_message(running.last_codex_message) || ""
+    current_phase = infer_current_phase(message)
+
+    if phased_delivery?(running, message) do
+      phased_delivery_tracking(running, handoff, current_phase)
+    else
+      %{
+        mode: "single_pr",
+        status: handoff.status,
+        current_phase: nil,
+        next_action: handoff.reason
+      }
+    end
+  end
+
+  defp delivery_tracking(_running, _retry) do
+    %{
+      mode: "unknown",
+      status: "idle",
+      current_phase: nil,
+      next_action: "issue is not currently running or retrying"
+    }
+  end
+
+  defp phased_delivery_tracking(running, handoff, current_phase) do
+    cond do
+      handoff.status == "review_ready" ->
+        %{
+          mode: "phased",
+          status: "awaiting_review",
+          current_phase: current_phase,
+          next_action: "review current phase PR; Rework for changes or Todo/In Progress for next phase"
+        }
+
+      handoff.status == "blocked" ->
+        %{
+          mode: "phased",
+          status: "blocked",
+          current_phase: current_phase,
+          next_action: handoff.reason
+        }
+
+      is_nil(current_phase) ->
+        %{
+          mode: "phased",
+          status: "phase_plan_needed",
+          current_phase: nil,
+          next_action: "create/update Phase Plan and select exactly one current phase"
+        }
+
+      true ->
+        %{
+          mode: "phased",
+          status: phase_execution_status(running.state),
+          current_phase: current_phase,
+          next_action: "complete current phase PR and hand off for review"
+        }
+    end
+  end
+
+  defp phase_execution_status(state) do
+    case state |> to_string() |> String.trim() |> String.downcase() do
+      "todo" -> "planning"
+      "in progress" -> "executing_current_phase"
+      "rework" -> "reworking_current_phase"
+      "merging" -> "merging_current_phase"
+      other when other != "" -> other
+      _ -> "executing_current_phase"
+    end
+  end
+
+  defp phased_delivery?(running, message) do
+    labels = labels(running)
+
+    Enum.any?(labels, fn label ->
+      normalized = label |> to_string() |> String.trim() |> String.downcase()
+      normalized in ["phased", "multi-pr", "large-refactor"]
+    end) or String.contains?(String.downcase(message), "phase plan")
+  end
+
+  defp infer_current_phase(message) when is_binary(message) do
+    case Regex.run(~r/Phase\s+(\d+)\s*\(Current\)\s*:\s*([^\n\r]+)/i, message) do
+      [_match, number, title] -> "Phase #{number}: #{String.trim(title)}"
+      _ -> nil
+    end
+  end
+
+  defp infer_current_phase(_message), do: nil
+
+  defp labels(entry) when is_map(entry) do
+    entry
+    |> Map.get(:labels, [])
+    |> case do
+      labels when is_list(labels) -> labels
+      _ -> []
+    end
   end
 
   defp blocked_event?(event) when is_binary(event) do

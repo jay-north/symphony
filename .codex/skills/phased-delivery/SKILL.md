@@ -19,13 +19,16 @@ one PR.
 3. Split the objective into small, reviewable phases that can each land as one
    PR.
 4. Mark exactly one phase as `Current`.
-5. Execute only the current phase unless the issue explicitly says one PR should
+5. Include the exact marker `Phase N (Current): <goal>` in workpad updates,
+   PR handoff notes, and final/status messages so Symphony's interface can
+   infer and display the current phase.
+6. Execute only the current phase unless the issue explicitly says one PR should
    cover multiple phases.
-6. Keep later phases as pending work; do not opportunistically implement them.
-7. After the current phase is pushed, open or update one PR for that phase.
-8. Put the phase number and phase goal in the PR title/body.
-9. Run the PR feedback sweep for that phase.
-10. Move to `Human Review` after the phase handoff bar is met.
+7. Keep later phases as pending work; do not opportunistically implement them.
+8. After the current phase is pushed, open or update one PR for that phase.
+9. Put the phase number and phase goal in the PR title/body.
+10. Run the PR feedback sweep for that phase.
+11. Move to `Human Review` after the phase handoff bar is met.
 
 ## Workpad Phase Plan
 

@@ -168,6 +168,9 @@ codex:
 - API running issue payloads include `handoff_readiness.status` with one of `blocked`,
   `validating`, `review_ready`, or `missing_required_artifacts` so operators can see whether a run
   is ready for human review or still missing production handoff evidence.
+- API running issue payloads also include `delivery_tracking`, which identifies `single_pr` versus
+  `phased` work, current phase when it can be inferred from agent status updates, delivery status,
+  and the next route operators should expect.
 
 ## Repo-local Codex configuration
 

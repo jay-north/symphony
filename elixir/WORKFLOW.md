@@ -77,6 +77,7 @@ Operating rules:
 - Before moving a `Todo` issue to `In Progress`, confirm it has acceptance criteria, a validation/test plan, or an explicit exploratory label. If it does not, create/update the workpad with the missing readiness item and stop without coding.
 - Before implementation, decide whether this issue is single-PR or phased. Use phased delivery when the issue is large, risky, explicitly phased, or labeled `phased`, `multi-pr`, or `large-refactor`.
 - For phased delivery, treat the issue as the persistent objective, maintain `### Phase Plan` in the workpad, select exactly one current phase, ship one PR for that phase, hand off for review, and repeat on the next `Todo`/`In Progress` run.
+- In phased workpad updates, PR handoff notes, and final/status messages, include the exact marker `Phase N (Current): <goal>` so the dashboard/API can infer the current phase.
 - Stamp the workpad with hostname, absolute workspace path, short SHA, Codex version, model, reasoning effort, branch, and issue state before implementation.
 - For UI work, include screenshots or browser verification artifacts in the handoff. For backend/API work, include request/response or log proof. For docs work, include preview or render proof when available.
 - Treat sandbox or approval denials as oversight signals, not routine blockers to brute-force. Record the denied action class and rationale in the workpad, try one narrower in-sandbox or read-only alternative, and stop for human review after a repeat denial.
