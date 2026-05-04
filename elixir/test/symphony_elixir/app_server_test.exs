@@ -431,9 +431,11 @@ defmodule SymphonyElixir.AppServerTest do
                      [
                        %{
                          "description" => description,
-                         "inputSchema" => %{"required" => ["query"]},
-                         "name" => "linear_graphql"
-                       }
+                         "inputSchema" => %{"required" => ["issue_id"]},
+                         "name" => "linear_get_issue"
+                       },
+                       %{"name" => "linear_create_comment"},
+                       %{"name" => "linear_update_issue_state"}
                      ] ->
                        description =~ "Linear"
 
@@ -882,7 +884,7 @@ defmodule SymphonyElixir.AppServerTest do
             ;;
           4)
             printf '%s\\n' '{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn-90a\"}}}'
-            printf '%s\\n' '{\"id\":102,\"method\":\"item/tool/call\",\"params\":{\"name\":\"linear_graphql\",\"callId\":\"call-90a\",\"threadId\":\"thread-90a\",\"turnId\":\"turn-90a\",\"arguments\":{\"query\":\"query Viewer { viewer { id } }\",\"variables\":{\"includeTeams\":false}}}}'
+            printf '%s\\n' '{\"id\":102,\"method\":\"item/tool/call\",\"params\":{\"name\":\"linear_update_issue_state\",\"callId\":\"call-90a\",\"threadId\":\"thread-90a\",\"turnId\":\"turn-90a\",\"arguments\":{\"issue_id\":\"DEN-53\",\"state\":\"Backlog\"}}}'
             ;;
           5)
             printf '%s\\n' '{\"method\":\"turn/completed\"}'
@@ -922,7 +924,7 @@ defmodule SymphonyElixir.AppServerTest do
           "contentItems" => [
             %{
               "type" => "inputText",
-              "text" => ~s({"data":{"viewer":{"id":"usr_123"}}})
+              "text" => ~s({"ok":true})
             }
           ]
         }
@@ -931,10 +933,10 @@ defmodule SymphonyElixir.AppServerTest do
       assert {:ok, _result} =
                AppServer.run(workspace, "Handle supported tool calls", issue, tool_executor: tool_executor)
 
-      assert_received {:tool_called, "linear_graphql",
+      assert_received {:tool_called, "linear_update_issue_state",
                        %{
-                         "query" => "query Viewer { viewer { id } }",
-                         "variables" => %{"includeTeams" => false}
+                         "issue_id" => "DEN-53",
+                         "state" => "Backlog"
                        }}
 
       trace = File.read!(trace_file)
@@ -950,7 +952,7 @@ defmodule SymphonyElixir.AppServerTest do
                  payload["id"] == 102 and
                    get_in(payload, ["result", "success"]) == true and
                    get_in(payload, ["result", "output"]) ==
-                     ~s({"data":{"viewer":{"id":"usr_123"}}})
+                     ~s({"ok":true})
                else
                  false
                end
@@ -1004,7 +1006,7 @@ defmodule SymphonyElixir.AppServerTest do
             ;;
           4)
             printf '%s\\n' '{\"id\":3,\"result\":{\"turn\":{\"id\":\"turn-90b\"}}}'
-            printf '%s\\n' '{\"id\":103,\"method\":\"item/tool/call\",\"params\":{\"tool\":\"linear_graphql\",\"callId\":\"call-90b\",\"threadId\":\"thread-90b\",\"turnId\":\"turn-90b\",\"arguments\":{\"query\":\"query Viewer { viewer { id } }\"}}}'
+            printf '%s\\n' '{\"id\":103,\"method\":\"item/tool/call\",\"params\":{\"tool\":\"linear_update_issue_state\",\"callId\":\"call-90b\",\"threadId\":\"thread-90b\",\"turnId\":\"turn-90b\",\"arguments\":{\"issue_id\":\"DEN-53\",\"state\":\"Backlog\"}}}'
             ;;
           5)
             printf '%s\\n' '{\"method\":\"turn/completed\"}'
@@ -1058,9 +1060,9 @@ defmodule SymphonyElixir.AppServerTest do
                  tool_executor: tool_executor
                )
 
-      assert_received {:tool_called, "linear_graphql", %{"query" => "query Viewer { viewer { id } }"}}
+      assert_received {:tool_called, "linear_update_issue_state", %{"issue_id" => "DEN-53", "state" => "Backlog"}}
 
-      assert_received {:app_server_message, %{event: :tool_call_failed, payload: %{"params" => %{"tool" => "linear_graphql"}}}}
+      assert_received {:app_server_message, %{event: :tool_call_failed, payload: %{"params" => %{"tool" => "linear_update_issue_state"}}}}
     after
       File.rm_rf(test_root)
     end

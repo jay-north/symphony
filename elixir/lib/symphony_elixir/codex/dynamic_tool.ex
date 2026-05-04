@@ -3,25 +3,54 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   Executes client-side tool calls requested by Codex app-server turns.
   """
 
-  alias SymphonyElixir.Linear.Client
+  alias SymphonyElixir.{Linear.Issue, Tracker}
 
-  @linear_graphql_tool "linear_graphql"
-  @linear_graphql_description """
-  Execute a raw GraphQL query or mutation against Linear using Symphony's configured auth.
+  @linear_get_issue_tool "linear_get_issue"
+  @linear_create_comment_tool "linear_create_comment"
+  @linear_update_issue_state_tool "linear_update_issue_state"
+
+  @issue_id_property %{
+    "type" => "string",
+    "description" => "Linear issue UUID or visible identifier such as DEN-53."
+  }
+  @linear_get_issue_description """
+  Fetch normalized metadata for one Linear issue using Symphony's configured tracker.
   """
-  @linear_graphql_input_schema %{
+  @linear_get_issue_input_schema %{
     "type" => "object",
     "additionalProperties" => false,
-    "required" => ["query"],
+    "required" => ["issue_id"],
     "properties" => %{
-      "query" => %{
+      "issue_id" => @issue_id_property
+    }
+  }
+  @linear_create_comment_description """
+  Create a comment on one Linear issue using Symphony's configured tracker.
+  """
+  @linear_create_comment_input_schema %{
+    "type" => "object",
+    "additionalProperties" => false,
+    "required" => ["issue_id", "body"],
+    "properties" => %{
+      "issue_id" => @issue_id_property,
+      "body" => %{
         "type" => "string",
-        "description" => "GraphQL query or mutation document to execute against Linear."
-      },
-      "variables" => %{
-        "type" => ["object", "null"],
-        "description" => "Optional GraphQL variables object.",
-        "additionalProperties" => true
+        "description" => "Markdown comment body."
+      }
+    }
+  }
+  @linear_update_issue_state_description """
+  Move one Linear issue to a named workflow state using Symphony's configured tracker.
+  """
+  @linear_update_issue_state_input_schema %{
+    "type" => "object",
+    "additionalProperties" => false,
+    "required" => ["issue_id", "state"],
+    "properties" => %{
+      "issue_id" => @issue_id_property,
+      "state" => %{
+        "type" => "string",
+        "description" => "Target Linear workflow state name, such as Backlog or In Review."
       }
     }
   }
@@ -29,8 +58,14 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   @spec execute(String.t() | nil, term(), keyword()) :: map()
   def execute(tool, arguments, opts \\ []) do
     case tool do
-      @linear_graphql_tool ->
-        execute_linear_graphql(arguments, opts)
+      @linear_get_issue_tool ->
+        execute_linear_get_issue(arguments, opts)
+
+      @linear_create_comment_tool ->
+        execute_linear_create_comment(arguments, opts)
+
+      @linear_update_issue_state_tool ->
+        execute_linear_update_issue_state(arguments, opts)
 
       other ->
         failure_response(%{
@@ -46,80 +81,99 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   def tool_specs do
     [
       %{
-        "name" => @linear_graphql_tool,
-        "description" => @linear_graphql_description,
-        "inputSchema" => @linear_graphql_input_schema
+        "name" => @linear_get_issue_tool,
+        "description" => @linear_get_issue_description,
+        "inputSchema" => @linear_get_issue_input_schema
+      },
+      %{
+        "name" => @linear_create_comment_tool,
+        "description" => @linear_create_comment_description,
+        "inputSchema" => @linear_create_comment_input_schema
+      },
+      %{
+        "name" => @linear_update_issue_state_tool,
+        "description" => @linear_update_issue_state_description,
+        "inputSchema" => @linear_update_issue_state_input_schema
       }
     ]
   end
 
-  defp execute_linear_graphql(arguments, opts) do
-    linear_client = Keyword.get(opts, :linear_client, &Client.graphql/3)
+  defp execute_linear_get_issue(arguments, opts) do
+    issue_fetcher = Keyword.get(opts, :issue_fetcher, &Tracker.fetch_issue/1)
 
-    with {:ok, query, variables} <- normalize_linear_graphql_arguments(arguments),
-         {:ok, response} <- linear_client.(query, variables, []) do
-      graphql_response(response)
+    with {:ok, issue_id} <- required_string(arguments, "issue_id"),
+         {:ok, issue} <- issue_fetcher.(issue_id) do
+      dynamic_tool_response(true, encode_payload(%{"issue" => issue_payload(issue)}))
     else
       {:error, reason} ->
         failure_response(tool_error_payload(reason))
     end
   end
 
-  defp normalize_linear_graphql_arguments(arguments) when is_binary(arguments) do
-    case String.trim(arguments) do
-      "" -> {:error, :missing_query}
-      query -> {:ok, query, %{}}
-    end
-  end
+  defp execute_linear_create_comment(arguments, opts) do
+    commenter = Keyword.get(opts, :commenter, &Tracker.create_comment/2)
 
-  defp normalize_linear_graphql_arguments(arguments) when is_map(arguments) do
-    case normalize_query(arguments) do
-      {:ok, query} ->
-        case normalize_variables(arguments) do
-          {:ok, variables} ->
-            {:ok, query, variables}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
+    with {:ok, issue_id} <- required_string(arguments, "issue_id"),
+         {:ok, body} <- required_string(arguments, "body"),
+         :ok <- commenter.(issue_id, body) do
+      dynamic_tool_response(true, encode_payload(%{"ok" => true}))
+    else
       {:error, reason} ->
-        {:error, reason}
+        failure_response(tool_error_payload(reason))
     end
   end
 
-  defp normalize_linear_graphql_arguments(_arguments), do: {:error, :invalid_arguments}
+  defp execute_linear_update_issue_state(arguments, opts) do
+    state_updater = Keyword.get(opts, :state_updater, &Tracker.update_issue_state/2)
 
-  defp normalize_query(arguments) do
-    case Map.get(arguments, "query") || Map.get(arguments, :query) do
-      query when is_binary(query) ->
-        case String.trim(query) do
-          "" -> {:error, :missing_query}
+    with {:ok, issue_id} <- required_string(arguments, "issue_id"),
+         {:ok, state} <- required_string(arguments, "state"),
+         :ok <- state_updater.(issue_id, state) do
+      dynamic_tool_response(true, encode_payload(%{"ok" => true}))
+    else
+      {:error, reason} ->
+        failure_response(tool_error_payload(reason))
+    end
+  end
+
+  defp required_string(arguments, field) when is_map(arguments) do
+    case Map.get(arguments, field) || Map.get(arguments, String.to_atom(field)) do
+      value when is_binary(value) ->
+        case String.trim(value) do
+          "" -> {:error, {:missing_required_string, field}}
           trimmed -> {:ok, trimmed}
         end
 
       _ ->
-        {:error, :missing_query}
+        {:error, {:missing_required_string, field}}
     end
   end
 
-  defp normalize_variables(arguments) do
-    case Map.get(arguments, "variables") || Map.get(arguments, :variables) || %{} do
-      variables when is_map(variables) -> {:ok, variables}
-      _ -> {:error, :invalid_variables}
-    end
+  defp required_string(_arguments, _field), do: {:error, :invalid_arguments}
+
+  defp issue_payload(%Issue{} = issue) do
+    %{
+      "id" => issue.id,
+      "identifier" => issue.identifier,
+      "title" => issue.title,
+      "description" => issue.description,
+      "priority" => issue.priority,
+      "state" => issue.state,
+      "branchName" => issue.branch_name,
+      "url" => issue.url,
+      "assigneeId" => issue.assignee_id,
+      "labels" => issue.labels,
+      "blockedBy" => issue.blocked_by,
+      "assignedToWorker" => issue.assigned_to_worker,
+      "createdAt" => encode_datetime(issue.created_at),
+      "updatedAt" => encode_datetime(issue.updated_at)
+    }
   end
 
-  defp graphql_response(response) do
-    success =
-      case response do
-        %{"errors" => errors} when is_list(errors) and errors != [] -> false
-        %{errors: errors} when is_list(errors) and errors != [] -> false
-        _ -> true
-      end
+  defp issue_payload(issue), do: issue
 
-    dynamic_tool_response(success, encode_payload(response))
-  end
+  defp encode_datetime(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
+  defp encode_datetime(_datetime), do: nil
 
   defp failure_response(payload) do
     dynamic_tool_response(false, encode_payload(payload))
@@ -144,26 +198,18 @@ defmodule SymphonyElixir.Codex.DynamicTool do
 
   defp encode_payload(payload), do: inspect(payload)
 
-  defp tool_error_payload(:missing_query) do
-    %{
-      "error" => %{
-        "message" => "`linear_graphql` requires a non-empty `query` string."
-      }
-    }
-  end
-
   defp tool_error_payload(:invalid_arguments) do
     %{
       "error" => %{
-        "message" => "`linear_graphql` expects either a GraphQL query string or an object with `query` and optional `variables`."
+        "message" => "Dynamic Linear tools expect a JSON object with the required fields for that tool."
       }
     }
   end
 
-  defp tool_error_payload(:invalid_variables) do
+  defp tool_error_payload({:missing_required_string, field}) do
     %{
       "error" => %{
-        "message" => "`linear_graphql.variables` must be a JSON object when provided."
+        "message" => "Dynamic Linear tool argument `#{field}` must be a non-empty string."
       }
     }
   end
@@ -179,7 +225,7 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   defp tool_error_payload({:linear_api_status, status}) do
     %{
       "error" => %{
-        "message" => "Linear GraphQL request failed with HTTP #{status}.",
+        "message" => "Linear request failed with HTTP #{status}.",
         "status" => status
       }
     }
@@ -188,7 +234,7 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   defp tool_error_payload({:linear_api_request, reason}) do
     %{
       "error" => %{
-        "message" => "Linear GraphQL request failed before receiving a successful response.",
+        "message" => "Linear request failed before receiving a successful response.",
         "reason" => inspect(reason)
       }
     }
@@ -197,7 +243,7 @@ defmodule SymphonyElixir.Codex.DynamicTool do
   defp tool_error_payload(reason) do
     %{
       "error" => %{
-        "message" => "Linear GraphQL tool execution failed.",
+        "message" => "Dynamic Linear tool execution failed.",
         "reason" => inspect(reason)
       }
     }

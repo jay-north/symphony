@@ -35,6 +35,14 @@ defmodule SymphonyElixir.Tracker.Memory do
      end)}
   end
 
+  @spec fetch_issue(String.t()) :: {:ok, Issue.t()} | {:error, term()}
+  def fetch_issue(issue_id) when is_binary(issue_id) do
+    case Enum.find(issue_entries(), &issue_matches?(&1, issue_id)) do
+      %Issue{} = issue -> {:ok, issue}
+      nil -> {:error, :issue_not_found}
+    end
+  end
+
   @spec create_comment(String.t(), String.t()) :: :ok | {:error, term()}
   def create_comment(issue_id, body) do
     send_event({:memory_tracker_comment, issue_id, body})
@@ -53,6 +61,10 @@ defmodule SymphonyElixir.Tracker.Memory do
 
   defp issue_entries do
     Enum.filter(configured_issues(), &match?(%Issue{}, &1))
+  end
+
+  defp issue_matches?(%Issue{id: id, identifier: identifier}, issue_id) do
+    issue_id in [id, identifier]
   end
 
   defp send_event(message) do

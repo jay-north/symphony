@@ -95,6 +95,45 @@ defmodule SymphonyElixir.Linear.Client do
   }
   """
 
+  @query_by_id_or_identifier """
+  query SymphonyLinearIssueByIdOrIdentifier($issueId: String!, $relationFirst: Int!) {
+    issue(id: $issueId) {
+      id
+      identifier
+      title
+      description
+      priority
+      state {
+        name
+      }
+      branchName
+      url
+      assignee {
+        id
+      }
+      labels {
+        nodes {
+          name
+        }
+      }
+      inverseRelations(first: $relationFirst) {
+        nodes {
+          type
+          issue {
+            id
+            identifier
+            state {
+              name
+            }
+          }
+        }
+      }
+      createdAt
+      updatedAt
+    }
+  }
+  """
+
   @viewer_query """
   query SymphonyLinearViewer {
     viewer {
@@ -157,6 +196,18 @@ defmodule SymphonyElixir.Linear.Client do
         with {:ok, assignee_filter} <- routing_assignee_filter() do
           do_fetch_issue_states(ids, assignee_filter)
         end
+    end
+  end
+
+  @spec fetch_issue(String.t()) :: {:ok, Issue.t()} | {:error, term()}
+  def fetch_issue(issue_id) when is_binary(issue_id) do
+    with {:ok, assignee_filter} <- routing_assignee_filter(),
+         {:ok, body} <-
+           graphql(@query_by_id_or_identifier, %{
+             issueId: issue_id,
+             relationFirst: @issue_page_size
+           }) do
+      decode_linear_issue_response(body, assignee_filter)
     end
   end
 
@@ -395,11 +446,15 @@ defmodule SymphonyElixir.Linear.Client do
   end
 
   defp post_graphql_request(payload, headers) do
-    Req.post(Config.settings!().tracker.endpoint,
-      headers: headers,
-      json: payload,
-      connect_options: [timeout: 30_000]
-    )
+    req_options =
+      [
+        headers: headers,
+        json: payload,
+        connect_options: [timeout: 30_000]
+      ]
+      |> Keyword.merge(Application.get_env(:symphony_elixir, :linear_req_options, []))
+
+    Req.post(Config.settings!().tracker.endpoint, req_options)
   end
 
   defp decode_linear_response(%{"data" => %{"issues" => %{"nodes" => nodes}}}, assignee_filter) do
@@ -436,6 +491,24 @@ defmodule SymphonyElixir.Linear.Client do
   end
 
   defp decode_linear_page_response(response, assignee_filter), do: decode_linear_response(response, assignee_filter)
+
+  defp decode_linear_issue_response(%{"data" => %{"issue" => issue}}, assignee_filter)
+       when is_map(issue) do
+    case normalize_issue(issue, assignee_filter) do
+      %Issue{} = normalized_issue -> {:ok, normalized_issue}
+      nil -> {:error, :linear_unknown_payload}
+    end
+  end
+
+  defp decode_linear_issue_response(%{"data" => %{"issue" => nil}}, _assignee_filter) do
+    {:error, :issue_not_found}
+  end
+
+  defp decode_linear_issue_response(%{"errors" => errors}, _assignee_filter) do
+    {:error, {:linear_graphql_errors, errors}}
+  end
+
+  defp decode_linear_issue_response(_unknown, _assignee_filter), do: {:error, :linear_unknown_payload}
 
   defp next_page_cursor(%{has_next_page: true, end_cursor: end_cursor})
        when is_binary(end_cursor) and byte_size(end_cursor) > 0 do
