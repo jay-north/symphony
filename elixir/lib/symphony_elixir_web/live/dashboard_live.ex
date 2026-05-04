@@ -48,10 +48,10 @@ defmodule SymphonyElixirWeb.DashboardLive do
               Symphony Observability
             </p>
             <h1 class="hero-title">
-              Operations Dashboard
+              What needs attention
             </h1>
             <p class="hero-copy">
-              Current state, retry pressure, token usage, and orchestration health for the active Symphony runtime.
+              Operations Dashboard for active work, blockers, retries, and the next handoff step.
             </p>
           </div>
 
@@ -78,7 +78,118 @@ defmodule SymphonyElixirWeb.DashboardLive do
           </p>
         </section>
       <% else %>
-        <section class="metric-grid">
+        <section class="attention-grid">
+          <article class="attention-card">
+            <p class="metric-label">Now</p>
+            <p class="attention-title"><%= attention_title(@payload) %></p>
+            <p class="attention-copy"><%= attention_copy(@payload) %></p>
+          </article>
+
+          <article class="metric-card compact-metric">
+            <p class="metric-label">Running</p>
+            <p class="metric-value numeric"><%= @payload.counts.running %></p>
+            <p class="metric-detail">active</p>
+          </article>
+
+          <article class="metric-card compact-metric">
+            <p class="metric-label">Retrying</p>
+            <p class="metric-value numeric"><%= @payload.counts.retrying %></p>
+            <p class="metric-detail">backing off</p>
+          </article>
+
+          <article class="metric-card compact-metric">
+            <p class="metric-label">Tokens</p>
+            <p class="metric-value numeric"><%= format_int(@payload.codex_totals.total_tokens) %></p>
+            <p class="metric-detail numeric">
+              <%= format_runtime_seconds(total_runtime_seconds(@payload, @now)) %> runtime
+            </p>
+          </article>
+        </section>
+
+        <section class="section-card action-section">
+          <div class="section-header">
+            <div>
+              <h2 class="section-title">Active work</h2>
+              <p class="section-copy">The thing to inspect when a run is not moving forward.</p>
+            </div>
+          </div>
+
+          <%= if @payload.running == [] do %>
+            <p class="empty-state">No active sessions. Start or pick up a Todo issue.</p>
+          <% else %>
+            <div class="work-grid">
+              <article :for={entry <- @payload.running} class="work-card">
+                <div class="work-card-header">
+                  <div class="issue-stack">
+                    <span class="issue-id"><%= entry.issue_identifier %></span>
+                    <span class={state_badge_class(entry.state)}>
+                      <%= entry.state %>
+                    </span>
+                  </div>
+                  <a class="primary-link" href={"/api/v1/#{entry.issue_identifier}"}>Open details</a>
+                </div>
+
+                <div class="work-main">
+                  <p class="work-label">Next action</p>
+                  <p class="work-action"><%= next_action(entry) %></p>
+                </div>
+
+                <div class="work-facts">
+                  <div>
+                    <p class="work-label">Delivery</p>
+                    <p><%= delivery_label(entry.delivery_tracking) %></p>
+                  </div>
+                  <div>
+                    <p class="work-label">Runtime / turns</p>
+                    <p class="numeric"><%= format_runtime_and_turns(entry.started_at, entry.turn_count, @now) %></p>
+                  </div>
+                  <div>
+                    <p class="work-label">Tokens</p>
+                    <p class="numeric"><%= format_int(entry.tokens.total_tokens) %></p>
+                  </div>
+                </div>
+
+                <div class="work-update">
+                  <p class="work-label">Latest Codex update</p>
+                  <p class="event-text-expanded"><%= entry.last_message || to_string(entry.last_event || "n/a") %></p>
+                  <p class="muted event-meta">
+                    <%= entry.last_event || "n/a" %>
+                    <%= if entry.last_event_at do %>
+                      · <span class="mono numeric"><%= entry.last_event_at %></span>
+                    <% end %>
+                  </p>
+                </div>
+
+                <div class="work-actions">
+                  <%= if entry.session_id do %>
+                    <button
+                      type="button"
+                      class="subtle-button"
+                      data-label="Copy session ID"
+                      data-copy={entry.session_id}
+                      onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = 'Copied'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);"
+                    >
+                      Copy ID
+                    </button>
+                  <% end %>
+                  <%= if entry.workspace_path do %>
+                    <button
+                      type="button"
+                      class="subtle-button"
+                      data-label="Copy workspace"
+                      data-copy={entry.workspace_path}
+                      onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = 'Copied'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);"
+                    >
+                      Copy workspace
+                    </button>
+                  <% end %>
+                </div>
+              </article>
+            </div>
+          <% end %>
+        </section>
+
+        <section class="metric-grid secondary-metrics">
           <article class="metric-card">
             <p class="metric-label">Running</p>
             <p class="metric-value numeric"><%= @payload.counts.running %></p>
@@ -121,7 +232,7 @@ defmodule SymphonyElixirWeb.DashboardLive do
           <div class="section-header">
             <div>
               <h2 class="section-title">Running sessions</h2>
-              <p class="section-copy">Active issues, last known agent activity, and token usage.</p>
+              <p class="section-copy">Dense view for comparing active sessions.</p>
             </div>
           </div>
 
@@ -133,9 +244,8 @@ defmodule SymphonyElixirWeb.DashboardLive do
                 <colgroup>
                   <col style="width: 12rem;" />
                    <col style="width: 8rem;" />
-                   <col style="width: 7.5rem;" />
                    <col style="width: 8.5rem;" />
-                   <col style="width: 12rem;" />
+                   <col style="width: 18rem;" />
                    <col />
                    <col style="width: 10rem;" />
                 </colgroup>
@@ -143,9 +253,8 @@ defmodule SymphonyElixirWeb.DashboardLive do
                   <tr>
                     <th>Issue</th>
                     <th>State</th>
-                     <th>Session</th>
                      <th>Runtime / turns</th>
-                     <th>Delivery</th>
+                     <th>Next action</th>
                      <th>Codex update</th>
                      <th>Tokens</th>
                   </tr>
@@ -163,34 +272,13 @@ defmodule SymphonyElixirWeb.DashboardLive do
                         <%= entry.state %>
                       </span>
                     </td>
-                    <td>
-                      <div class="session-stack">
-                        <%= if entry.session_id do %>
-                          <button
-                            type="button"
-                            class="subtle-button"
-                            data-label="Copy ID"
-                            data-copy={entry.session_id}
-                            onclick="navigator.clipboard.writeText(this.dataset.copy); this.textContent = 'Copied'; clearTimeout(this._copyTimer); this._copyTimer = setTimeout(() => { this.textContent = this.dataset.label }, 1200);"
-                          >
-                            Copy ID
-                          </button>
-                        <% else %>
-                          <span class="muted">n/a</span>
-                        <% end %>
-                      </div>
-                    </td>
                      <td class="numeric"><%= format_runtime_and_turns(entry.started_at, entry.turn_count, @now) %></td>
                      <td>
                        <div class="delivery-stack">
                          <span class={delivery_badge_class(entry.delivery_tracking.status)}>
                            <%= delivery_label(entry.delivery_tracking) %>
                          </span>
-                         <%= if entry.delivery_tracking.current_phase do %>
-                           <span class="muted event-meta"><%= entry.delivery_tracking.current_phase %></span>
-                         <% else %>
-                           <span class="muted event-meta"><%= entry.delivery_tracking.next_action %></span>
-                         <% end %>
+                         <span class="muted event-meta"><%= next_action(entry) %></span>
                        </div>
                      </td>
                      <td>
@@ -285,6 +373,35 @@ defmodule SymphonyElixirWeb.DashboardLive do
         total + runtime_seconds_from_started_at(entry.started_at, now)
       end)
   end
+
+  defp attention_title(%{retrying: retrying}) when retrying != [] do
+    "#{length(retrying)} issue(s) backing off"
+  end
+
+  defp attention_title(%{running: []}), do: "No active Symphony work"
+
+  defp attention_title(%{running: [entry | _]}) do
+    "#{entry.issue_identifier}: #{next_action(entry)}"
+  end
+
+  defp attention_copy(%{retrying: [entry | _]}) do
+    "Retry #{entry.attempt} is due #{entry.due_at || "soon"}: #{entry.error || "no error recorded"}"
+  end
+
+  defp attention_copy(%{running: []}), do: "There is nothing currently moving. Check Todo or start a worker."
+
+  defp attention_copy(%{running: [entry | _]}) do
+    update = entry.last_message || to_string(entry.last_event || "no update yet")
+    "#{delivery_label(entry.delivery_tracking)} · #{update}"
+  end
+
+  defp next_action(%{delivery_tracking: %{current_phase: phase}} = entry) when is_binary(phase) do
+    "#{phase}: #{entry.delivery_tracking.next_action}"
+  end
+
+  defp next_action(%{delivery_tracking: %{next_action: action}}) when is_binary(action), do: action
+  defp next_action(%{handoff_readiness: %{reason: reason}}) when is_binary(reason), do: reason
+  defp next_action(_entry), do: "inspect issue details"
 
   defp format_runtime_and_turns(started_at, turn_count, now) when is_integer(turn_count) and turn_count > 0 do
     "#{format_runtime_seconds(runtime_seconds_from_started_at(started_at, now))} / #{turn_count}"
